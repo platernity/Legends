@@ -345,7 +345,7 @@ Void StartWarmup() {
 Void InitRoundValues(){
 	StartTime = Now+3500;
 	EndTime = StartTime+(S_AttackTimeLimit+S_CaptureTimeLimit)*1000;
-	UIManager.UIAll.CountdownEndTime=StartTime+45*1000;
+	UIManager.UIAll.CountdownEndTime=StartTime+S_AttackTimeLimit*1000;
 	G_CapturingPossible = False;
 	G_Pole1Captured = False;
 	G_Pole2Captured = False;
