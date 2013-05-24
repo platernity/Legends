@@ -41,7 +41,7 @@
 #Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nThe teams get 1 point for a successfull attack and 1 point for a successfull defence. First team to reach score limit win the map.")
 #Const	C_PlayerNeeded	1 		//Number of players needed to start match
 #Const	C_NoWarmUp		False	//For testing purposes only
-#Const	C_UseBots		True	//For testing purposes only
+#Const	C_UseBots		False	//For testing purposes only
 #Const	C_UsePlayLoopLogs False	//For testing purposes only
 #Const	C_AttackerAmmoGain			1.0			// Attacker ammunition gain rate
 #Const	C_DefenderAmmoGain			1.0			// Defender ammunition gain rate
