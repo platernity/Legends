@@ -22,7 +22,7 @@
 #Include "Libs/Nadeo/ShootMania/WarmUpSimple.Script.txt" as WarmUp
 
 /* SETTINGS */
-#Setting	S_AttackTimeLimit			10		as _("Attack time limit")
+#Setting	S_AttackTimeLimit			20		as _("Attack time limit")
 #Setting	S_CaptureTimeLimit			15		as _("Capture time limit")
 #Setting	S_CaptureTime				1.5		as _("Time to capture pole")
 #Setting	S_WarmupTime				90		as _("Warmup duration")
@@ -42,11 +42,13 @@
 #Const	C_PlayerNeeded	1 		//Number of players needed to start match
 #Const	C_NoWarmUp		False	//For testing purposes only
 #Const	C_UseBots		True	//For testing purposes only
+#Const	C_UsePlayLoopLogs False	//For testing purposes only
 #Const	C_AttackerAmmoGain			1.0			// Attacker ammunition gain rate
 #Const	C_DefenderAmmoGain			1.0			// Defender ammunition gain rate
 #Const	C_AttackerArmor				3			// Attacker armor
 #Const	C_DefenderArmor				1			// Defender armor
 #Const	C_BigMessageTime			1500		// Time BigMessage stay
+#Const	C_StatusMessageTime			1500		// Time StatusMessage stay
 #Const	C_PoleUITime				1000		// Time PoleUI stay
 /* GLOBALES */
 declare	Boolean G_CapturingPossible;			// Whether it's possible to capture the goal
@@ -60,6 +62,13 @@ declare Integer	G_RoundCounter;					// Actual round played
 declare Boolean	G_Pole1Captured;
 declare Boolean	G_Pole2Captured;
 declare Integer[Ident] G_DefenderTimeToBeRespawned;		//List Times for defenders to be respawned
+declare Ident[] G_DefenderKilledTeam1;			//List Defenders killed in team1
+declare Ident[] G_DefenderKilledTeam2;			//List Defenders killed in team2
+declare Boolean G_Team1WonDefense;				//
+declare Boolean G_Team2WonDefense;				//
+declare Boolean	G_Team1WonAttack;				//
+declare Boolean	G_Team2WonAttack;				//
+
 
 //UI
 declare CUILayer LayerScores;
@@ -71,8 +80,12 @@ declare Text[] G_PlayingPlayersLogins;			// Logins of all currently playing play
 declare Text G_LongestLaserName;				// Name of longest laser shooter
 declare Real G_LongestLaserDist;				// Distance of longest laser shot
 declare Integer G_LastBigMessage;				// Time of LastBigMessage
+declare Integer G_LastStatusMessage;			// Time of LastStatusMessage
 declare Integer G_LastPoleUI;					// Time of LastPoleUI
 declare CSmPlayer G_LastPlayerPoleUI;			// Last Player needs PoleUIReset
+
+//Logs
+declare Integer G_LogTime;
 
 
 
@@ -111,6 +124,7 @@ SetRoles();
 SetSpawnsAndPoles();
 AnnounceAttackers();
 StartPlay();
+G_LogTime=StartTime+1000;
 ***
 
 ***OnNewPlayer***
@@ -126,6 +140,11 @@ PrepareUIForSpectator(Spectator);
 
 ***PlayLoop***
 ***
+if(Now>=G_LogTime && C_UsePlayLoopLogs){
+	G_LogTime+=3000;
+	//logs
+	log("playloop logs");
+}
 UpdateUI();
 SpawnPlayers();
 HandlePendingEvents();
@@ -158,6 +177,63 @@ Clean();
 	FUNCTIONS
 *****************************************************/
 //Other
+//Winnings
+Void Team1WonAttack(){
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Capture;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.StatusMessage = """$<{{{Players[G_Team1AttackingPlayer].Name}}}$> wins the Attack""";
+	G_LastStatusMessage=Now;
+	G_Team1WonAttack=True;
+	G_Team2WonDefense=False;
+	foreach (Pole in BlockPoles){
+		if(Pole.Gauge.Clan == 1){
+			Pole.Gauge.ValueReal = 1.0;
+		}
+	}
+	G_Pole1Captured = True;
+	
+}
+Void Team2WonAttack(){
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Capture;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.StatusMessage = """$<{{{Players[G_Team2AttackingPlayer].Name}}}$> wins the Attack""";
+	G_LastStatusMessage=Now;
+	G_Team2WonAttack=True;
+	G_Team1WonDefense=False;
+	
+	foreach (Pole in BlockPoles){
+		if(Pole.Gauge.Clan == 2){
+			Pole.Gauge.ValueReal = 1.0;
+		}
+	}
+	G_Pole2Captured = True;
+}
+Void Team1WonDefense(){
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.StatusMessage = """$<{{{Teams[0].ColorText}}}{{{Teams[0].Name}}} defense$> stopped $<{{{Players[G_Team2AttackingPlayer].Name}}}$>""";
+	G_LastStatusMessage=Now;
+	G_Team1WonDefense=True;
+	G_Team2WonAttack=False;
+}
+Void Team2WonDefense(){
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.StatusMessage = """$<{{{Teams[1].ColorText}}}{{{Teams[1].Name}}} defense$> stopped $<{{{Players[G_Team1AttackingPlayer].Name}}}$>""";
+	G_LastStatusMessage=Now;
+	G_Team2WonDefense=True;
+	G_Team1WonAttack=False;
+}
+//ResetPoleUI
+Void ResetPoleUI(CSmBlockPole Pole){
+	if(Pole.Gauge.Clan == 1){
+		G_LastPlayerPoleUI = Players[G_Team1AttackingPlayer];
+	}
+	else if(Pole.Gauge.Clan == 2){
+		G_LastPlayerPoleUI = Players[G_Team2AttackingPlayer];
+	}
+	G_LastPoleUI=Now;
+}
 // Increases score points
 Void IncreaseScore(Ident _Id, Integer _Points) {
 	if (Players.existskey(_Id) && Players[_Id].Score != Null) {
@@ -262,6 +338,7 @@ UIManager.UIAll.UILayers.add(LayerMarkers);
 Void InitUI() {
 UIManager.UIAll.BigMessage = "";
 G_LastBigMessage=0;
+G_LastStatusMessage=0;
 UIManager.UIAll.StatusMessage = "";
 UIManager.UIAll.ScoreTableOnlyManialink = True;
 
@@ -284,6 +361,7 @@ Victory::MatchBegin();
 
 }
 Void InitBases() {
+log("reset pole and spawns");
 	declare Integer clan1;
 	declare Integer clan2;
 	
@@ -324,7 +402,6 @@ Void InitBases() {
 Void InitPoles() {
 foreach (Pole in BlockPoles){
 	Pole.Gauge.Max = MathLib::NearestInteger(S_CaptureTime * 1000);
-	log(Pole.Gauge.Max);
 }
 
 }
@@ -350,6 +427,12 @@ Void InitRoundValues(){
 	G_Pole1Captured = False;
 	G_Pole2Captured = False;
 	G_DefenderTimeToBeRespawned.clear();
+	G_DefenderKilledTeam1.clear();
+	G_DefenderKilledTeam2.clear();
+	G_Team1WonDefense = False;
+	G_Team2WonDefense = False;
+	G_Team1WonAttack = False;
+	G_Team2WonAttack = False;
 }
 Void PrepareRound() {
 SM::UnspawnAllPlayers();
@@ -409,7 +492,7 @@ G_LastBigMessage = Now;
 }
 Void StartPlay() {
 	
-	log("startRound");
+	log("startRound "^G_RoundCounter);
 	InitRoundValues();
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 	
@@ -437,11 +520,18 @@ if (UI != Null) {
 }
 //PlayLoop
 Void UpdateUI(){
+
 	//Big Message Handle
 	if (G_LastBigMessage!=0 && Now >= G_LastBigMessage + C_BigMessageTime) {
 		log("BigMessage reset");
 		G_LastBigMessage=0;
 		UIManager.UIAll.BigMessage = "";
+	}
+	//Status Message Handle
+	if (G_LastStatusMessage!=0 && Now >= G_LastStatusMessage + C_StatusMessageTime) {
+		log("StatusMessage reset");
+		G_LastStatusMessage=0;
+		UIManager.UIAll.StatusMessage = "";
 	}
 	//PoleUI Handle
 	if(G_LastPoleUI!=0 && Now >= G_LastPoleUI + C_PoleUITime){
@@ -498,6 +588,7 @@ foreach (Event in PendingEvents) {
 							//Ping Victim
 							Discard(Event);
 						}else{
+							G_DefenderKilledTeam2.add(Event.Victim.Id);
 							PassOn(Event);
 						}
 						
@@ -506,11 +597,13 @@ foreach (Event in PendingEvents) {
 							//Ping Victim
 							Discard(Event);
 						}else{
+							G_DefenderKilledTeam1.add(Event.Victim.Id);
 							PassOn(Event);
 						}
 					}else{
 						if(Event.Shooter.CurrentClan == 1){
 							if(Event.Victim.Id == G_Team2AttackingPlayer){
+								
 								PassOn(Event);
 							}else{
 								//Def vs Def
@@ -534,7 +627,30 @@ foreach (Event in PendingEvents) {
 				PassOn(Event);
 			}
 		case CSmModeEvent::EType::OnCapture: {
-				PassOn(Event);
+				if(Event.BlockPole.Gauge.Clan == 1){
+					if(!G_Pole1Captured){
+						G_Pole1Captured=True;
+						//Attack successfull
+						log("Pole 1 captured");
+						ResetPoleUI(Event.BlockPole);
+						Team1WonAttack();
+						PassOn(Event);
+					}
+				}
+				else if(Event.BlockPole.Gauge.Clan == 2){
+					if(!G_Pole2Captured){
+						G_Pole2Captured=True;
+						//Attack successfull
+						log("Pole 2 captured");
+						ResetPoleUI(Event.BlockPole);
+						Team2WonAttack();
+						PassOn(Event);
+					}
+			
+				}else{
+					Discard(Event);
+				}
+				
 			}
 		case CSmModeEvent::EType::OnNearMiss: {
 				PassOn(Event);
@@ -555,33 +671,45 @@ if (Now >= StartTime + S_AttackTimeLimit*1000) {
 		G_CapturingPossible = True;
 		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::PhaseChange;
 		UIManager.UIAll.BigMessageSoundVariant = 0;
-		UIManager.UIAll.BigMessage = _("The goal can now be captured.");
+		UIManager.UIAll.StatusMessage = _("The goal can now be captured.");
 		UIManager.UIAll.CountdownEndTime = -1;
-		G_LastBigMessage=Now;
+		G_LastStatusMessage=Now;
 	}
 }
 }
 Void CheckForCapture(){
 foreach (Pole in BlockPoles) {
 	if (G_CapturingPossible) {
-		if(Pole.Sector.PlayersIds.count > 0){
-			foreach(PlayerId in Pole.Sector.PlayersIds){
+		if((!G_Team1WonAttack && Pole.Gauge.Clan == 1) || (!G_Team2WonAttack && Pole.Gauge.Clan == 2)){
+			if(Pole.Sector.PlayersIds.count > 0){
+				foreach(PlayerId in Pole.Sector.PlayersIds){
 			
-				if(Pole.Gauge.Clan == 1 && PlayerId == G_Team1AttackingPlayer){
-					declare UI <=> UIManager.GetUI(Players[PlayerId]);
-					if (UI != Null) {
-						UI.GaugeRatio = Pole.Gauge.ValueReal;
-						UI.GaugeMessage = MathLib::FloorInteger(Pole.Gauge.ValueReal * 100)^"%";
-						UI.GaugeClan = Players[PlayerId].CurrentClan;
+					if(Pole.Gauge.Clan == 1 && PlayerId == G_Team1AttackingPlayer){
+						declare UI <=> UIManager.GetUI(Players[PlayerId]);
+						if (UI != Null) {
+							UI.GaugeRatio = Pole.Gauge.ValueReal;
+							UI.GaugeMessage = MathLib::FloorInteger(Pole.Gauge.ValueReal * 100)^"%";
+							UI.GaugeClan = Players[PlayerId].CurrentClan;
+							
+						}
+						Pole.Gauge.Speed = 1;
+					}else if(Pole.Gauge.Clan ==2 && PlayerId == G_Team2AttackingPlayer){
+						declare UI <=> UIManager.GetUI(Players[PlayerId]);
+						if (UI != Null) {
+							UI.GaugeRatio = Pole.Gauge.ValueReal;
+							UI.GaugeMessage = MathLib::FloorInteger(Pole.Gauge.ValueReal * 100)^"%";
+							UI.GaugeClan = Players[PlayerId].CurrentClan;
+							
+						}
+						Pole.Gauge.Speed = 1;
 					}
-					Pole.Gauge.Speed = 1;
-				}else if(Pole.Gauge.Clan ==2 && PlayerId == G_Team2AttackingPlayer){
-					Pole.Gauge.Speed = 1;
+					else{
+						Pole.Gauge.Speed=0;
+					}
 				}
-				else{
-					Pole.Gauge.Speed=0;
-				}
-			}
+			}else{
+			Pole.Gauge.Speed=0;
+		}
 		}else{
 			Pole.Gauge.Speed=0;
 		}
@@ -600,62 +728,67 @@ Void RespawnDefender() {
 		}
 	}
 }
-Void ResetPoleUI(CSmBlockPole Pole){
-	if(Pole.Gauge.Clan == 1){
-		G_LastPlayerPoleUI = Players[G_Team1AttackingPlayer];
-	}
-	else if(Pole.Gauge.Clan == 2){
-		G_LastPlayerPoleUI = Players[G_Team2AttackingPlayer];
-	}
-	G_LastPoleUI=Now;
-}
-Void team1WonAttack(){
-	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Capture;
-	UIManager.UIAll.BigMessageSoundVariant = 0;
-	UIManager.UIAll.BigMessage = """$<{{{Players[G_Team1AttackingPlayer].Name}}}$> wins the Attack""";
-	G_LastBigMessage=Now;
-}
-Void team2WonAttack(){
-	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Capture;
-	UIManager.UIAll.BigMessageSoundVariant = 0;
-	UIManager.UIAll.BigMessage = """$<{{{Players[G_Team2AttackingPlayer].Name}}}$> wins the Attack""";
-	G_LastBigMessage=Now;
-}
+
+
 Void SetPoints() {
-foreach(Pole in BlockPoles){
-	if(Pole.Gauge.ValueReal>=1.0){
-		if(Pole.Base.Clan == 1){
-			if(!G_Pole1Captured){
-				G_Pole1Captured=True;
-				//Attack successfull
-				log("Pole captured");
-				ResetPoleUI(Pole);
-				team1WonAttack();
-				
-			}
-			
-		}
-		if(Pole.Base.Clan == 2){
-			if(!G_Pole2Captured){
-				G_Pole2Captured=True;
-				//Attack successfull
-				log("Pole captured");
-				ResetPoleUI(Pole);
-				team2WonAttack();
-			}
-			
-		}
-		
+//Check attacker 1
+if(!G_Team1WonAttack && Now>=StartTime && Players[G_Team1AttackingPlayer].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned && !G_Team2WonDefense){
+	Team2WonDefense();
+}
+//Check attacker 2
+if(!G_Team2WonAttack && Now>=StartTime && Players[G_Team2AttackingPlayer].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned && !G_Team1WonDefense){
+	Team1WonDefense();
+}
+//Check Defense 1
+if(!G_Team2WonAttack && !G_Team1WonDefense){
+	if(G_DefenderKilledTeam1.count>=G_Team1DefenderPlayers.count){
+		//Attacker2 won
+		log("All Def killed");
+		Team2WonAttack();
 	}
 }
 
+//Check Defense 2
+if(!G_Team1WonAttack && !G_Team2WonDefense){
+	if(G_DefenderKilledTeam2.count>=G_Team2DefenderPlayers.count){
+		//Attacker1 won
+		log("All Def killed");
+		Team1WonAttack();
+	}
+}
+
+if(G_Team1WonAttack && G_Team2WonAttack){
+log("team1 and team2 won attack");
+	MB_StopRound = True;
+}
+if(G_Team1WonAttack && G_Team1WonDefense){
+log("team1 won attack and defense");
+	MB_StopRound = True;
+}
+if(G_Team2WonAttack && G_Team2WonDefense){
+log("team2 won attack and defense");
+	MB_StopRound = True;
+}
+if(G_Team1WonDefense && G_Team2WonDefense){
+log("team1 and team2 won defense");
+	MB_StopRound = True;
+}
+
+//EndTime
 if (!MB_StopRound && Now>=EndTime) {
 	// Round winner found
-	MB_StopRound = True;
 	foreach(Pole in BlockPoles){
-		ResetPoleUI(Pole);
+		if(Pole.Gauge.ValueReal<1.0){
+			if(Pole.Gauge.Clan==2 && !G_Team2WonAttack && !G_Team1WonDefense){
+			log("Pole not cap, team1def win");
+				Team1WonDefense();
+			}else if(Pole.Gauge.Clan==1 && !G_Team1WonAttack && !G_Team2WonDefense){
+			log("Pole not cap, team2def win");
+				Team2WonDefense();
+			}
+		}
+		//ResetPoleUI(Pole);
 	}
-	
 }
 
 
