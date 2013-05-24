@@ -36,12 +36,14 @@
 #Setting 	S_AttackerPingTime			3		as _("Attacker ping time on hit")
 #Setting 	S_DefenderRespawnTime		5		as _("Defender respawn time on hit")
 #Setting	S_FriendlyFire				False	as _("Friendly fire")
+#Setting	S_RedBots			0	as _("Red bots")
+#Setting	S_BlueBots			0	as _("Blue bots")
 
 //* CONSTANTS */
 #Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nThe teams get 1 point for a successfull attack and 1 point for a successfull defence. First team to reach score limit win the map.")
 #Const	C_PlayerNeeded	1 		//Number of players needed to start match
 #Const	C_NoWarmUp		False	//For testing purposes only
-#Const	C_UseBots		False	//For testing purposes only
+#Const	C_UseBots		True	//For testing purposes only
 #Const	C_UsePlayLoopLogs False	//For testing purposes only
 #Const	C_AttackerAmmoGain			1.0			// Attacker ammunition gain rate
 #Const	C_DefenderAmmoGain			1.0			// Defender ammunition gain rate
@@ -412,7 +414,7 @@ Void StartWarmup() {
 	WarmUp::SetMinimumPlayersNumber(C_PlayerNeeded);
 	if(C_UseBots){
 		log(AllPlayers.count);
-		Users_SetNbFakeUsers(3,4);
+		Users_SetNbFakeUsers(S_BlueBots,S_RedBots);
 	}
 	WarmUp::Start();
 	
