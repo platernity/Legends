@@ -34,13 +34,14 @@
 #Setting	S_PointLimitToWin			9		as _("Point limit to win map")
 #Setting	S_MapsToWin					3		as _("Maps to win to win match")
 #Setting 	S_PointLimitDecisiveRound	15		as _("Decisive point limit")
-#Setting 	S_TimeBetweenRounds			2.		as _("Time between Rounds")
+#Setting 	S_TimeBetweenRounds			5.		as _("Time between Rounds")
 #Setting 	S_UsePlayerClublinks		True	as _("Use player clublinks")
 #Setting 	S_UseLaserVsBullets			True	as _("Use laser vs rockets")
 #Setting	S_UseAmmoBonusOnHit			True	as _("Use Ammo reload on hit")
 #Setting 	S_AttackerPingTime			3		as _("Attacker ping time on hit")
-#Setting 	S_DefenderRespawnTime		1		as _("Defender respawn time on hit")
+#Setting 	S_DefenderRespawnTime		5		as _("Defender respawn time on hit")
 #Setting	S_FriendlyFire				False	as _("Friendly fire")
+#Setting	S_GetAPointForDefense		False	as _("Get a point for successfull defense")
 
 //To be removed
 #Setting	S_BlueBots			0	as _("Blue bots")
@@ -49,6 +50,7 @@
 //* CONSTANTS */
 #Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nEach teams get 1 point for any successfull attack. First team to reach score limit win the map.")
 #Const	C_PlayerNeeded	8 		//Number of players needed to start match
+#Const	C_MaxPlayers	10		//Number of players max for a match (FreeMode)
 #Const	C_NoWarmUp		False	//For testing purposes only
 #Const	C_UseBots		True	//For testing purposes only
 #Const	C_UsePlayLoopLogs False	//For testing purposes only
@@ -59,7 +61,8 @@
 #Const	C_DefenderArmor				1			// Defender armor
 #Const	C_BigMessageTime			2500		// Time BigMessage stay
 #Const	C_StatusMessageTime			2500		// Time StatusMessage stay
-#Const	C_PoleUITime				2000		// Time PoleUI stay
+#Const	C_PoleUITime				1000		// Time PoleUI stay
+
 
 #Const	C_UI_Colors [
 	"BG"		=> "fffa",
@@ -82,16 +85,15 @@ declare	Ident	G_Team2AttackingPlayer;			// Attacking player from Team 2
 declare Integer	G_RoundCounter;					// Actual round played
 declare Boolean	G_Pole1Captured;
 declare Boolean	G_Pole2Captured;
-declare Integer[Ident] G_DefenderTimeToBeRespawned;		//List Times for defenders to be respawned
-declare Ident[] G_DefenderKilledTeam1;			//List Defenders killed in team1
-declare Ident[] G_DefenderKilledTeam2;			//List Defenders killed in team2
+declare Integer[Ident] G_DefenderTeam1TimeToBeRespawned;		//List Times for team 1 defenders to be respawned
+declare Integer[Ident] G_DefenderTeam2TimeToBeRespawned;		//List Times for team 2 defenders to be respawned
 declare Boolean G_Team1WonDefense;				//
 declare Boolean G_Team2WonDefense;				//
 declare Boolean	G_Team1WonAttack;				//
 declare Boolean	G_Team2WonAttack;				//
 declare Integer G_BlueBots;
 declare Integer G_RedBots;
-declare CSmPlayer[]	G_PlayingPlayers;			//All Playing players
+//declare CSmPlayer[]	G_PlayingPlayers;			//All Playing players
 declare	Integer[Ident][Integer] G_MapOrder;		//Attack Order
 declare Integer[Integer] G_InitDefHit;			///< Default values for the defenders hit
 
@@ -112,7 +114,7 @@ declare Real G_LongestLaserDist;				// Distance of longest laser shot
 declare Integer G_LastBigMessage;				// Time of LastBigMessage
 declare Integer G_LastStatusMessage;			// Time of LastStatusMessage
 declare Integer G_LastPoleUI;					// Time of LastPoleUI
-declare CSmPlayer G_LastPlayerPoleUI;			// Last Player needs PoleUIReset
+declare CSmPlayer[] G_LastPlayerPoleUI;			// Last Players needs PoleUIReset
 declare Boolean	G_Playing;
 
 //Logs
@@ -911,6 +913,10 @@ Void SpawnThePlayer(CSmPlayer Player){
 		}else{
 			Player.ArmorMax = G_Team1DefenderPlayers.count*C_AttackerArmorMultiplier*100;
 		}
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			UI.SpectatorForcedClan = Player.CurrentClan;
+		}
 		
 		SM::SpawnPlayer(Player, Player.CurrentClan, Spawn, StartTime);
 		//SpawnPlayer(Player, Player.CurrentClan, Player.ArmorMax, Spawn, StartTime);
@@ -919,6 +925,14 @@ Void SpawnThePlayer(CSmPlayer Player){
 		This.SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, True);
 		Player.AmmoGain = C_DefenderAmmoGain;
 		Player.ArmorMax = C_DefenderArmor*100;
+		Player.StaminaMax = 1. * C_DefStaminaMaxMultiplier;
+		Player.StaminaGain = 1. * C_DefStaminaMaxMultiplier;
+		
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			UI.SpectatorForcedClan = Player.CurrentClan;
+		}
+		
 		SM::SpawnPlayer(Player, Player.CurrentClan, Spawn, StartTime);
 		//SpawnPlayer(Player, Player.CurrentClan, Player.ArmorMax, Spawn, StartTime);
 		return;
@@ -950,22 +964,25 @@ Void SpawnThemAll(Integer _Phase) {
 			SetPlayerAmmoMax(Player, CSmMode::EWeapon::Rocket, 4);
 			SetPlayerAmmoMax(Player, CSmMode::EWeapon::Laser, 1);
 			SetPlayerAmmoMax(Player, CSmMode::EWeapon::Nucleus, 1);
-			Player.ArmorMax	= 2;
+			SetPlayerAmmoMax(Player, CSmMode::EWeapon::Arrow, 1);
+			
+			//Player.ArmorMax	= 2;
 			if (WarmUpSide) {
 				Player.AmmoGain	= 1. * C_AttackerAmmoGain;
 				Player.StaminaMax = 1.;
 				Player.StaminaGain = 1.;
-
+				Player.ArmorMax = 200;
+				Player.Armor = Player.ArmorMax;
 				SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
-				SM::SpawnPlayer(Player, Player.RequestedClan, Player.ArmorMax, BlockSpawn1, Now);
-				SetPlayerAmmo(Player, CSmMode::EWeapon::Nucleus, 1);
+				SM::SpawnPlayer(Player, Player.RequestedClan, BlockSpawn1, Now);
 			} else {
 				Player.AmmoGain	= 1. * C_DefenderAmmoGain;
 				Player.StaminaMax = 1. * C_DefStaminaMaxMultiplier;
 				Player.StaminaGain = 1. * C_DefStaminaMaxMultiplier;
+				Player.ArmorMax = 200;
+				Player.Armor = Player.ArmorMax;
 				SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, True); 
-				SM::SpawnPlayer(Player, Player.RequestedClan, Player.ArmorMax, BlockSpawn2, Now);
-				SetPlayerAmmo(Player, CSmMode::EWeapon::Nucleus, 1);
+				SM::SpawnPlayer(Player, Player.RequestedClan, BlockSpawn2, Now);
 			}
 			Player.IsHighlighted = True;
 			WarmUpSide = !WarmUpSide;
@@ -1056,7 +1073,7 @@ Void DoWarmUp() {
 	// Waiting that the UI receives initial data
 	MB_Sleep(1000);
 
-	if (MB_UseScriptCallbacks) XmlRpc.SendCallback("BeginWarmup", Json::Enfold(Json::Stringify("AllReady", False)));
+	//if (MB_UseScriptCallbacks) XmlRpc.SendCallback("BeginWarmup", Json::Enfold(Json::Stringify("AllReady", False)));
 
 	declare RazorTime = -1;
 	StartTime = Now + 1000;
@@ -1081,7 +1098,7 @@ Void DoWarmUp() {
 
 	// Param: Duration, UseTeam, UseOrder, NumberOfPlayers
 	if(S_FreeMode){
-		WarmUp::Before(S_WarmUpDuration, True, True, 5);
+		WarmUp::Before(S_WarmUpDuration, True, True, C_MaxPlayers/2);
 		
 	}else{
 		WarmUp::Before(S_WarmUpDuration, True, True, C_PlayerNeeded/2);
@@ -1327,6 +1344,10 @@ Void Team1WonDefense(){
 		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
 		CUIConfig::EUISound::Silence, 0);
 	G_LastStatusMessage=Now;
+	if(S_GetAPointForDefense){
+		G_RoundScores[1]+=1;
+	}
+	UpdateHeader();
 	G_Team1WonDefense=True;
 	G_Team2WonAttack=False;
 }
@@ -1340,21 +1361,26 @@ Void Team2WonDefense(){
 		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
 		CUIConfig::EUISound::Silence, 0);
 	G_LastStatusMessage=Now;
+	if(S_GetAPointForDefense){
+		G_RoundScores[2]+=1;
+	}
+	UpdateHeader();
 	G_Team2WonDefense=True;
 	G_Team1WonAttack=False;
 }
 //ResetPoleUI
 Void ResetPoleUI(CSmBlockPole Pole){
-	if(Pole.Gauge.Clan == 1){
-		G_LastPlayerPoleUI = Players[G_Team1AttackingPlayer];
+	if(Pole.Gauge.Clan == 1 && Players.existskey(G_Team1AttackingPlayer)){
+		G_LastPlayerPoleUI.add(Players[G_Team1AttackingPlayer]);
 	}
-	else if(Pole.Gauge.Clan == 2){
-		G_LastPlayerPoleUI = Players[G_Team2AttackingPlayer];
+	else if(Pole.Gauge.Clan == 2 && Players.existskey(G_Team1AttackingPlayer)){
+		G_LastPlayerPoleUI.add(Players[G_Team2AttackingPlayer]);
 	}
 	G_LastPoleUI=Now;
 }
 Void ResetPoleUIPlayer(CSmPlayer Player){
-	if(Player!=Null){
+
+	if(Players.existskey(Player.Id)){
 		declare UI <=> UIManager.GetUI(Player);
 		if (UI != Null) {
 			UI.GaugeRatio = -1.;
@@ -1542,9 +1568,8 @@ Void InitRoundValues(){
 	G_CapturingPossible = False;
 	G_Pole1Captured = False;
 	G_Pole2Captured = False;
-	G_DefenderTimeToBeRespawned.clear();
-	G_DefenderKilledTeam1.clear();
-	G_DefenderKilledTeam2.clear();
+	G_DefenderTeam1TimeToBeRespawned.clear();
+	G_DefenderTeam2TimeToBeRespawned.clear();
 	G_Team1WonDefense = False;
 	G_Team2WonDefense = False;
 	G_Team1WonAttack = False;
@@ -1574,17 +1599,17 @@ if(S_FreeMode){
 Void SetTeams() {
 	G_Team1Players.clear();
 	G_Team2Players.clear();
-	G_PlayingPlayers.clear();
+	//G_PlayingPlayers.clear();
 	foreach(Player in Players){
 	if(Player.CurrentClan==1){
-		if(S_FreeMode || G_Team1Players.count<C_PlayerNeeded/2){
+		if(S_FreeMode || G_Team1Players.count<C_PlayerNeeded/2 && G_Team1Players.count>=C_MaxPlayers/2){
 			G_Team1Players.add(Player.Id);
-			G_PlayingPlayers.add(Player);
+			//G_PlayingPlayers.add(Player);
 		}
 	}else if(Player.CurrentClan==2){
 		if(S_FreeMode || G_Team2Players.count<C_PlayerNeeded/2){
 			G_Team2Players.add(Player.Id);
-			G_PlayingPlayers.add(Player);
+			//G_PlayingPlayers.add(Player);
 		}
 	}
 	
@@ -1594,7 +1619,13 @@ Void SetTeams() {
 Void SetRoles() {
 //Team1
 G_Team1DefenderPlayers.clear();
-G_Team1AttackingPlayer=G_Team1Players[G_Team1Players.count-(G_RoundCounter%G_Team1Players.count)-1];
+declare MapOrderTeam1 = G_MapOrder[1].sort();
+foreach(Id => Order in MapOrderTeam1){
+	if(Order == 1+G_RoundCounter%G_Team1Players.count){
+		G_Team1AttackingPlayer=Players[Id].Id;
+	}
+}
+//G_Team1AttackingPlayer=G_Team1Players[MapOrderTeam1[G_RoundCounter%G_Team1Players.count]];
 foreach(PlayerId in G_Team1Players){
 	if(PlayerId!=G_Team1AttackingPlayer){
 		G_Team1DefenderPlayers.add(PlayerId);
@@ -1603,7 +1634,16 @@ foreach(PlayerId in G_Team1Players){
 //Team2
 
 G_Team2DefenderPlayers.clear();
-G_Team2AttackingPlayer=G_Team2Players[G_Team2Players.count-(G_RoundCounter%G_Team2Players.count)-1];
+
+declare MapOrderTeam2 = G_MapOrder[2].sort();
+foreach(Id => Order in MapOrderTeam2){
+	if(Order == 1+G_RoundCounter%G_Team2Players.count){
+		G_Team2AttackingPlayer=Players[Id].Id;
+	}
+}
+	
+//G_Team2AttackingPlayer=G_Team1Players[MapOrderTeam2[G_Team2Players[G_RoundCounter%G_Team2Players.count]]];
+//G_Team2AttackingPlayer=G_Team2Players[G_Team2Players.count-(G_RoundCounter%G_Team2Players.count)-1];
 foreach(PlayerId in G_Team2Players){
 	if(PlayerId!=G_Team2AttackingPlayer){
 		G_Team2DefenderPlayers.add(PlayerId);
@@ -1637,6 +1677,7 @@ if (UI != Null) {
 	UI.UILayers.add(LayerPosition);
 	UI.UILayers.add(LayerInformation);
 	UI.UILayers.add(LayerMarkers);
+	UI.SpectatorForcedClan = Player.RequestedClan;
 }
 }
 Void EditValues(CSmPlayer Player) {
@@ -1685,17 +1726,20 @@ Void UpdateUI(){
 	}
 	//PoleUI Handle
 	if(G_LastPoleUI!=0 && Now >= G_LastPoleUI + C_PoleUITime){
-		declare UI <=> UIManager.GetUI(G_LastPlayerPoleUI);
+		foreach(Player in G_LastPlayerPoleUI){
+		declare UI <=> UIManager.GetUI(Player);
 			if (UI != Null) {
 				UI.GaugeRatio = -1.;
 				UI.GaugeMessage = "";
 				UI.GaugeClan = 0;
 			}
+		} 
+		G_LastPlayerPoleUI.clear();
 	}
 }
 Void SpawnPlayers() {
 	if(Now<=StartTime){
-	foreach (Player in G_PlayingPlayers) {
+	foreach (Player in Players) {
 	
 	switch (Player.SpawnStatus) {
 		case CSmPlayer::ESpawnStatus::NotSpawned: {
@@ -1726,6 +1770,7 @@ Void HandlePendingEvents() {
 foreach (Event in PendingEvents) {
 	switch (Event.Type) {
 		case CSmModeEvent::EType::OnHit: {
+				Event.Damage=100;
 				if (Event.Shooter == Null || Event.Victim == Null) {
 					// Discard buggy event
 					Discard(Event);
@@ -1750,7 +1795,6 @@ foreach (Event in PendingEvents) {
 							
 							Discard(Event);
 						}else{
-							G_DefenderKilledTeam2.add(Event.Victim.Id);
 							PassOn(Event);
 						}
 						
@@ -1760,7 +1804,6 @@ foreach (Event in PendingEvents) {
 							
 							Discard(Event);
 						}else{
-							G_DefenderKilledTeam1.add(Event.Victim.Id);
 							PassOn(Event);
 						}
 					}else{
@@ -1770,7 +1813,7 @@ foreach (Event in PendingEvents) {
 								PassOn(Event);
 							}else{
 								//Def vs Def
-								G_DefenderTimeToBeRespawned[Event.Victim.Id] = Now + S_DefenderRespawnTime*1000;
+								G_DefenderTeam2TimeToBeRespawned[Event.Victim.Id] = Now + S_DefenderRespawnTime*1000;
 								PassOn(Event);
 							}
 						}
@@ -1779,7 +1822,7 @@ foreach (Event in PendingEvents) {
 								PassOn(Event);
 							}else{
 								//Def vs Def
-								G_DefenderTimeToBeRespawned[Event.Victim.Id] = Now + S_DefenderRespawnTime*1000;
+								G_DefenderTeam1TimeToBeRespawned[Event.Victim.Id] = Now + S_DefenderRespawnTime*1000;
 								PassOn(Event);
 							}
 						}
@@ -1843,7 +1886,7 @@ if (Now >= StartTime + S_AttackTimeLimit*1000 && Now<EndTime) {
 Void CheckForCapture(){
 foreach (Pole in BlockPoles) {
 	if (G_CapturingPossible) {
-		if((!G_Team1WonAttack && Pole.Gauge.Clan == 1) || (!G_Team2WonAttack && Pole.Gauge.Clan == 2)){
+		//if((!G_Team1WonAttack && Pole.Gauge.Clan == 1) || (!G_Team2WonAttack && Pole.Gauge.Clan == 2)){
 			if(Pole.Sector.PlayersIds.count > 0){
 				foreach(PlayerId in Pole.Sector.PlayersIds){
 			
@@ -1853,6 +1896,8 @@ foreach (Pole in BlockPoles) {
 							UI.GaugeRatio = Pole.Gauge.ValueReal;
 							UI.GaugeMessage = MathLib::FloorInteger(Pole.Gauge.ValueReal * 100)^"%";
 							UI.GaugeClan = Players[PlayerId].CurrentClan;
+							G_LastPlayerPoleUI.add(Players[PlayerId]);
+							G_LastPoleUI=Now;
 							
 						}
 						Pole.Gauge.Speed = 1;
@@ -1862,6 +1907,9 @@ foreach (Pole in BlockPoles) {
 							UI.GaugeRatio = Pole.Gauge.ValueReal;
 							UI.GaugeMessage = MathLib::FloorInteger(Pole.Gauge.ValueReal * 100)^"%";
 							UI.GaugeClan = Players[PlayerId].CurrentClan;
+							G_LastPlayerPoleUI.add(Players[PlayerId]);
+							G_LastPoleUI=Now;
+							
 						}
 						Pole.Gauge.Speed = 1;
 					}
@@ -1872,17 +1920,25 @@ foreach (Pole in BlockPoles) {
 		}else{
 			Pole.Gauge.Speed=0;
 		}
-	}else{
-		Pole.Gauge.Speed=0;
-	}
-}
+	}//else{
+		//Pole.Gauge.Speed=0;
+	//}
+	//}
 }
 Void RespawnDefender() {
-	foreach(PlayerId => Time in G_DefenderTimeToBeRespawned){
+	foreach(PlayerId => Time in G_DefenderTeam1TimeToBeRespawned){
 	
 		if(Time != 0 && Now >= Time){
 			SpawnThePlayer(Players[PlayerId]);
-			G_DefenderTimeToBeRespawned[PlayerId] = 0;
+			G_DefenderTeam1TimeToBeRespawned[PlayerId] = 0;
+			
+		}
+	}
+	foreach(PlayerId => Time in G_DefenderTeam2TimeToBeRespawned){
+	
+		if(Time != 0 && Now >= Time){
+			SpawnThePlayer(Players[PlayerId]);
+			G_DefenderTeam2TimeToBeRespawned[PlayerId] = 0;
 			
 		}
 	}
@@ -1891,45 +1947,127 @@ Void RespawnDefender() {
 
 Void SetPoints() {
 //Check attacker 1
-if(!G_Team1WonAttack && Now>=StartTime && Players[G_Team1AttackingPlayer].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned && !G_Team2WonDefense){
+if(Players.existskey(G_Team1AttackingPlayer) && !G_Team1WonAttack && Now>=StartTime && Players[G_Team1AttackingPlayer].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned && !G_Team2WonDefense){
+	Team2WonDefense();
+}else if(!Players.existskey(G_Team1AttackingPlayer)){
 	Team2WonDefense();
 }
 //Check attacker 2
-if(!G_Team2WonAttack && Now>=StartTime && Players[G_Team2AttackingPlayer].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned && !G_Team1WonDefense){
+if(Players.existskey(G_Team2AttackingPlayer) && !G_Team2WonAttack && Now>=StartTime && Players[G_Team2AttackingPlayer].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned && !G_Team1WonDefense){
+	Team1WonDefense();
+}else if(!Players.existskey(G_Team1AttackingPlayer)){
 	Team1WonDefense();
 }
 //Check Defense 1
 if(!G_Team2WonAttack && !G_Team1WonDefense){
-	if(G_DefenderKilledTeam1.count>=G_Team1DefenderPlayers.count){
+declare Team1DefKilled =0;
+foreach(PlayerId in G_Team1DefenderPlayers){
+	if(Players[PlayerId].SpawnStatus ==CSmPlayer::ESpawnStatus::NotSpawned){
+		Team1DefKilled+=1;
+	}
+}
+foreach(PlayerId => Time in G_DefenderTeam1TimeToBeRespawned){
+	if(Time>0){
+		Team1DefKilled-=1;
+	}
+}
+	if(Team1DefKilled>=G_Team1DefenderPlayers.count){
 		//Attacker2 won
-		log("All Def killed");
 		Team2WonAttack();
 	}
 }
 
 //Check Defense 2
 if(!G_Team1WonAttack && !G_Team2WonDefense){
-	if(G_DefenderKilledTeam2.count>=G_Team2DefenderPlayers.count){
-		//Attacker1 won
-		log("All Def killed");
+	declare Team2DefKilled =0;
+foreach(PlayerId in G_Team2DefenderPlayers){
+	if(Players[PlayerId].SpawnStatus ==CSmPlayer::ESpawnStatus::NotSpawned){
+		Team2DefKilled+=1;
+	}
+}
+foreach(PlayerId => Time in G_DefenderTeam2TimeToBeRespawned){
+	if(Time>0){
+		Team2DefKilled-=1;
+	}
+}
+	if(Team2DefKilled>=G_Team2DefenderPlayers.count){
+		//Attacker2 won
 		Team1WonAttack();
 	}
 }
 
 if(G_Team1WonAttack && G_Team2WonAttack){
 log("team1 and team2 won attack");
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+UIManager.UIAll.BigMessageSoundVariant = 0;
+UIManager.UIAll.BigMessage = TextLib::Compose(_("Draw! $<%1$> and $<%2$> get 1 Point!"), Teams[0].ColorizedName, Teams[1].ColorizedName);
+UIManager.UIAll.SendNotice(
+UIManager.UIAll.BigMessage,
+CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+CUIConfig::EUISound::Silence, 0);
+
+G_LastBigMessage=Now;
 	MB_StopRound = True;
 }
 if(G_Team1WonAttack && G_Team1WonDefense){
 log("team1 won attack and defense");
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+UIManager.UIAll.BigMessageSoundVariant = 0;
+if(G_RoundScores[1]==G_RoundScores[2]){
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Back in the game! $<%1$> win the round!"), Teams[0].ColorizedName);
+}else if(G_RoundScores[1]==G_RoundScores[2]+1 && !S_GetAPointForDefense){
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Break advantage! $<%1$> win the round!"), Teams[0].ColorizedName);
+}else if(G_RoundScores[1]==G_RoundScores[2]+2 && S_GetAPointForDefense){
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Break advantage! $<%1$> win the round!"), Teams[0].ColorizedName);
+}else{
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> win the round!"), Teams[0].ColorizedName);
+}
+UIManager.UIAll.SendNotice(
+UIManager.UIAll.BigMessage,
+CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+CUIConfig::EUISound::Silence, 0);
+
+G_LastBigMessage=Now;
 	MB_StopRound = True;
 }
 if(G_Team2WonAttack && G_Team2WonDefense){
 log("team2 won attack and defense");
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+UIManager.UIAll.BigMessageSoundVariant = 0;
+if(G_RoundScores[2]<=G_RoundScores[1]){
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Back in the game! $<%1$> win the round!"), Teams[1].ColorizedName);
+}else if(G_RoundScores[2]==G_RoundScores[1]+1 && !S_GetAPointForDefense){
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Break advantage! $<%1$> win the round!"), Teams[1].ColorizedName);
+}else if(G_RoundScores[2]==G_RoundScores[1]+2 && S_GetAPointForDefense){
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Break advantage! $<%1$> win the round!"), Teams[1].ColorizedName);
+}else{
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> win the round!"), Teams[1].ColorizedName);
+}
+
+UIManager.UIAll.SendNotice(
+UIManager.UIAll.BigMessage,
+CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+CUIConfig::EUISound::Silence, 0);
+
+G_LastBigMessage=Now;
 	MB_StopRound = True;
 }
 if(G_Team1WonDefense && G_Team2WonDefense){
 log("team1 and team2 won defense");
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+UIManager.UIAll.BigMessageSoundVariant = 0;
+if(S_GetAPointForDefense){
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Draw! $<%1$> and $<%2$> get 1 Point!"), Teams[0].ColorizedName, Teams[1].ColorizedName);
+}else{
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("Draw! $<%1$> and $<%2$> get 0 Point!"), Teams[0].ColorizedName, Teams[1].ColorizedName);
+}
+
+UIManager.UIAll.SendNotice(
+UIManager.UIAll.BigMessage,
+CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+CUIConfig::EUISound::Silence, 0);
+
+G_LastBigMessage=Now;
 	MB_StopRound = True;
 }
 
@@ -1959,12 +2097,18 @@ if (!MB_StopRound && Now>=EndTime) {
 
 //EndRound
 Void AttributePoints() {
+	SM::UnspawnAllPlayers();
+	EndTime=Now;
 	G_RoundCounter+=1;
 }
 Void DisplayResults() {
 sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
-foreach(Player in G_PlayingPlayers){
-		ResetPoleUIPlayer(Player);
+log("sleep");
+
+foreach(Player in Players){
+		if(Players.existskey(Player.Id)){
+			ResetPoleUIPlayer(Player);
+		}
 	}
 sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
 }
@@ -2007,6 +2151,14 @@ if(G_RoundScores[1]>=S_PointLimitToWin || G_RoundScores[2]>=S_PointLimitToWin){
 		G_MapScores[2]+=1;
 		G_RoundScores = [1 => 0, 2 => 0];
 		UpdateHeader();
+		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndMatch ;
+		UIManager.UIAll.BigMessageSoundVariant = 1;
+		UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> wins the map!"), Teams[1].ColorizedName);
+		UIManager.UIAll.SendNotice(
+		UIManager.UIAll.BigMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
+		G_LastBigMessage=Now;
 		EndMap();
 		
 	}else if(G_RoundScores[1]>=G_RoundScores[2]+S_PointGapToWin){
@@ -2015,6 +2167,14 @@ if(G_RoundScores[1]>=S_PointLimitToWin || G_RoundScores[2]>=S_PointLimitToWin){
 		G_MapScores[1]+=1;
 		G_RoundScores = [1 => 0, 2 => 0];
 		UpdateHeader();
+		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndMatch ;
+		UIManager.UIAll.BigMessageSoundVariant = 1;
+		UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> wins the map!"), Teams[0].ColorizedName);
+		UIManager.UIAll.SendNotice(
+		UIManager.UIAll.BigMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
+		G_LastBigMessage=Now;
 		EndMap();
 	}
 	}
@@ -2026,4 +2186,3 @@ Void EndMapUI() {
 //EndServer
 Void Clean() {
 }
-
