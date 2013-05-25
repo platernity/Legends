@@ -22,10 +22,11 @@
 #Include "Libs/Nadeo/ShootMania/WarmUpSimple.Script.txt" as WarmUp
 
 /* SETTINGS */
-#Setting	S_AttackTimeLimit			20		as _("Attack time limit")
+#Setting	S_FreeMode					True	as _("Free Mode")
+#Setting	S_AttackTimeLimit			45		as _("Attack time limit")
 #Setting	S_CaptureTimeLimit			15		as _("Capture time limit")
 #Setting	S_CaptureTime				1.5		as _("Time to capture pole")
-#Setting	S_WarmupTime				90		as _("Warmup duration")
+#Setting	S_WarmUpDuration			90		as _("Warmup duration")
 #Setting	S_PointGapToWin				2		as _("Point gap to win map")
 #Setting	S_PointLimitToWin			9		as _("Point limit to win map")
 #Setting 	S_PointLimitDecisiveRound	15		as _("Decisive point limit")
@@ -36,22 +37,24 @@
 #Setting 	S_AttackerPingTime			3		as _("Attacker ping time on hit")
 #Setting 	S_DefenderRespawnTime		5		as _("Defender respawn time on hit")
 #Setting	S_FriendlyFire				False	as _("Friendly fire")
-#Setting	S_RedBots			0	as _("Red bots")
+
+//To be removed
 #Setting	S_BlueBots			0	as _("Blue bots")
+#Setting	S_RedBots			0	as _("Red bots")
 
 //* CONSTANTS */
 #Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nThe teams get 1 point for a successfull attack and 1 point for a successfull defence. First team to reach score limit win the map.")
-#Const	C_PlayerNeeded	1 		//Number of players needed to start match
+#Const	C_PlayerNeeded	8 		//Number of players needed to start match
 #Const	C_NoWarmUp		False	//For testing purposes only
 #Const	C_UseBots		True	//For testing purposes only
 #Const	C_UsePlayLoopLogs False	//For testing purposes only
 #Const	C_AttackerAmmoGain			1.0			// Attacker ammunition gain rate
 #Const	C_DefenderAmmoGain			1.0			// Defender ammunition gain rate
-#Const	C_AttackerArmor				3			// Attacker armor
+#Const	C_AttackerArmorMultiplier	1			// Attacker armor per Defender.
 #Const	C_DefenderArmor				1			// Defender armor
-#Const	C_BigMessageTime			1500		// Time BigMessage stay
-#Const	C_StatusMessageTime			1500		// Time StatusMessage stay
-#Const	C_PoleUITime				1000		// Time PoleUI stay
+#Const	C_BigMessageTime			2500		// Time BigMessage stay
+#Const	C_StatusMessageTime			2500		// Time StatusMessage stay
+#Const	C_PoleUITime				2000		// Time PoleUI stay
 /* GLOBALES */
 declare	Boolean G_CapturingPossible;			// Whether it's possible to capture the goal
 declare	Ident[]	G_Team1Players;					// All players from Team 1
@@ -85,6 +88,8 @@ declare Integer G_LastBigMessage;				// Time of LastBigMessage
 declare Integer G_LastStatusMessage;			// Time of LastStatusMessage
 declare Integer G_LastPoleUI;					// Time of LastPoleUI
 declare CSmPlayer G_LastPlayerPoleUI;			// Last Player needs PoleUIReset
+
+declare Boolean	G_Playing;
 
 //Logs
 declare Integer G_LogTime;
@@ -179,6 +184,71 @@ Clean();
 	FUNCTIONS
 *****************************************************/
 //Other
+/// Update the Hud3dMarkers.
+Void UpdateMarkers(CSmPlayer Player) {
+	// Set the marker above the goals
+	foreach (Goal in BlockPoles) {
+		declare Name = "";
+		declare Type = "";
+		declare PosX = Goal.Position.X;
+		declare PosY = Goal.Position.Y + 25;
+		declare PosZ = Goal.Position.Z;
+		declare Set = False;
+		if(!Set){
+			foreach(PlayerId in G_Team1DefenderPlayers){
+				if(Player.Id == PlayerId){
+					Set=True;
+					if (Goal.Order == 1) {
+						Name = "$wDefend";
+					} else if (Goal.Order == 2) {
+						Name = "";
+					}
+				}
+			}
+		}if(!Set){
+			foreach(PlayerId in G_Team2DefenderPlayers){
+				if(Player.Id == PlayerId){
+					Set=True;
+					if (Goal.Order == 2) {
+						Name = "$wDefend";
+					} else if (Goal.Order == 1) {
+						Name = "";
+					}
+				}
+			}
+		}if(!Set){
+			if(Player.Id == G_Team1AttackingPlayer){
+				Set=True;
+				
+				if (Goal.Order == 2) {
+					Name = "$wAttack";
+				} else if (Goal.Order == 1) {
+					Name = "";
+				}
+			}
+		}if(!Set){
+			if(Player.Id == G_Team2AttackingPlayer){
+				Set=True;
+				if (Goal.Order == 1) {
+					Name = "$wAttack";
+				} else if (Goal.Order == 2) {
+					Name = "";
+				}
+			}
+		}
+		
+
+		if (Name == "") continue;
+
+		UIManager.GetUI(Player).Hud3dMarkers ^= """
+			<marker {{{Name}}} pos="{{{PosX}}} {{{PosY}}} {{{PosZ}}}" />
+		""";
+	}
+}
+//Create Marker Layer for Attacker
+Text GetMarkerForAttacker(CSmPlayer Player){
+	return """<frame id="Marker_{{{TextLib::MLEncode(Player.Login)}}}"><quad sizen="4 4" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""";
+}
 //Winnings
 Void Team1WonAttack(){
 	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Capture;
@@ -236,6 +306,14 @@ Void ResetPoleUI(CSmBlockPole Pole){
 	}
 	G_LastPoleUI=Now;
 }
+Void ResetPoleUIPlayer(CSmPlayer Player){
+	declare UI <=> UIManager.GetUI(Player);
+	if (UI != Null) {
+		UI.GaugeRatio = -1.;
+		UI.GaugeMessage = "";
+		UI.GaugeClan = 0;
+	}
+}
 // Increases score points
 Void IncreaseScore(Ident _Id, Integer _Points) {
 	if (Players.existskey(_Id) && Players[_Id].Score != Null) {
@@ -257,9 +335,14 @@ Void SpawnThePlayer(CSmPlayer Player){
 	This.SetPlayerAmmoMax(Player, CSmMode::EWeapon::Arrow, 1);
 	
 	if (Player.Id == G_Team1AttackingPlayer || Player.Id == G_Team2AttackingPlayer){
-		This.SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, True);
+		This.SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
 		Player.AmmoGain = C_AttackerAmmoGain;
-		Player.ArmorMax = C_AttackerArmor*100;
+		if(Player.Id == G_Team1AttackingPlayer){
+			Player.ArmorMax = G_Team2DefenderPlayers.count*C_AttackerArmorMultiplier*100;
+		}else{
+			Player.ArmorMax = G_Team1DefenderPlayers.count*C_AttackerArmorMultiplier*100;
+		}
+		
 		SM::SpawnPlayer(Player, Player.CurrentClan, Spawn, StartTime);
 		//SpawnPlayer(Player, Player.CurrentClan, Player.ArmorMax, Spawn, StartTime);
 		return;
@@ -410,10 +493,14 @@ foreach (Pole in BlockPoles){
 Void StartWarmup() {
 	log("warmup");
 	UseClans = True;
-	WarmUp::Initialize(15);
-	WarmUp::SetMinimumPlayersNumber(C_PlayerNeeded);
+	WarmUp::Initialize(S_WarmUpDuration);
+	if(S_FreeMode){
+		WarmUp::SetMinimumPlayersNumber(2);
+	}else{
+		WarmUp::SetMinimumPlayersNumber(C_PlayerNeeded/2);
+	}
+	
 	if(C_UseBots){
-		log(AllPlayers.count);
 		Users_SetNbFakeUsers(S_BlueBots,S_RedBots);
 	}
 	WarmUp::Start();
@@ -435,18 +522,26 @@ Void InitRoundValues(){
 	G_Team2WonDefense = False;
 	G_Team1WonAttack = False;
 	G_Team2WonAttack = False;
+	G_Playing= False;
 }
 Void PrepareRound() {
-SM::UnspawnAllPlayers();
-Score::RoundBegin();
-Victory::RoundBegin();
-
+	SM::UnspawnAllPlayers();
+	Score::RoundBegin();
+	Victory::RoundBegin();
+	
 }
 
 Void CheckWarmup() {
-if (PlayersNbTotal < C_PlayerNeeded) {
-	StartWarmup();
+if(S_FreeMode){
+	if(PlayersNbTotal<4){
+		StartWarmup();
+	}
+}else{
+	if (PlayersNbTotal < C_PlayerNeeded || PlayersNbTotal > C_PlayerNeeded) {
+		StartWarmup();
+	}
 }
+
 
 }
 Void SetTeams() {
@@ -465,7 +560,7 @@ Void SetTeams() {
 Void SetRoles() {
 //Team1
 G_Team1DefenderPlayers.clear();
-G_Team1AttackingPlayer=G_Team1Players[3-G_RoundCounter%4];
+G_Team1AttackingPlayer=G_Team1Players[G_Team1Players.count-(G_RoundCounter%G_Team1Players.count)-1];
 foreach(PlayerId in G_Team1Players){
 	if(PlayerId!=G_Team1AttackingPlayer){
 		G_Team1DefenderPlayers.add(PlayerId);
@@ -474,7 +569,7 @@ foreach(PlayerId in G_Team1Players){
 //Team2
 
 G_Team2DefenderPlayers.clear();
-G_Team2AttackingPlayer=G_Team2Players[3-G_RoundCounter%4];
+G_Team2AttackingPlayer=G_Team2Players[G_Team2Players.count-(G_RoundCounter%G_Team2Players.count)-1];
 foreach(PlayerId in G_Team2Players){
 	if(PlayerId!=G_Team2AttackingPlayer){
 		G_Team2DefenderPlayers.add(PlayerId);
@@ -493,10 +588,9 @@ UIManager.UIAll.SendNotice("",
 G_LastBigMessage = Now;
 }
 Void StartPlay() {
-	
 	log("startRound "^G_RoundCounter);
 	InitRoundValues();
-	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	
 	
 }
 //OnNewPlayer
@@ -522,7 +616,11 @@ if (UI != Null) {
 }
 //PlayLoop
 Void UpdateUI(){
-
+	if(Now>= StartTime-3000 && !G_Playing){
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+		
+		G_Playing = True;
+	}
 	//Big Message Handle
 	if (G_LastBigMessage!=0 && Now >= G_LastBigMessage + C_BigMessageTime) {
 		log("BigMessage reset");
@@ -588,6 +686,7 @@ foreach (Event in PendingEvents) {
 					if(Event.Shooter.Id == G_Team1AttackingPlayer){
 						if(Event.Victim.Id == G_Team2AttackingPlayer){
 							//Ping Victim
+							
 							Discard(Event);
 						}else{
 							G_DefenderKilledTeam2.add(Event.Victim.Id);
@@ -597,6 +696,7 @@ foreach (Event in PendingEvents) {
 					}else if(Event.Shooter.Id == G_Team2AttackingPlayer){
 						if(Event.Victim.Id == G_Team1AttackingPlayer){
 							//Ping Victim
+							
 							Discard(Event);
 						}else{
 							G_DefenderKilledTeam1.add(Event.Victim.Id);
@@ -667,7 +767,7 @@ foreach (Event in PendingEvents) {
 }
 }
 Void ActivateGoal() {
-if (Now >= StartTime + S_AttackTimeLimit*1000) {
+if (Now >= StartTime + S_AttackTimeLimit*1000 && Now<EndTime) {
 	if (!G_CapturingPossible) {
 		log("Cap time");
 		G_CapturingPossible = True;
@@ -704,9 +804,6 @@ foreach (Pole in BlockPoles) {
 							
 						}
 						Pole.Gauge.Speed = 1;
-					}
-					else{
-						Pole.Gauge.Speed=0;
 					}
 				}
 			}else{
@@ -778,6 +875,8 @@ log("team1 and team2 won defense");
 
 //EndTime
 if (!MB_StopRound && Now>=EndTime) {
+	G_CapturingPossible = False;
+	
 	// Round winner found
 	foreach(Pole in BlockPoles){
 		if(Pole.Gauge.ValueReal<1.0){
@@ -789,8 +888,9 @@ if (!MB_StopRound && Now>=EndTime) {
 				Team2WonDefense();
 			}
 		}
-		//ResetPoleUI(Pole);
+		
 	}
+	
 }
 
 
@@ -801,6 +901,11 @@ Void AttributePoints() {
 	G_RoundCounter+=1;
 }
 Void DisplayResults() {
+sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
+foreach(Player in Players){
+		ResetPoleUIPlayer(Player);
+	}
+sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
 }
 Void CheckMatchEnd() {
 }
