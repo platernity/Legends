@@ -1081,7 +1081,8 @@ Void DoWarmUp() {
 
 	// Param: Duration, UseTeam, UseOrder, NumberOfPlayers
 	if(S_FreeMode){
-		WarmUp::Before(S_WarmUpDuration, True, True, MathLib::NearestInteger(Players.count/2.+1));
+		WarmUp::Before(S_WarmUpDuration, True, True, 5);
+		
 	}else{
 		WarmUp::Before(S_WarmUpDuration, True, True, C_PlayerNeeded/2);
 	}
