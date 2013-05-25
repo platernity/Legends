@@ -1102,7 +1102,6 @@ Void DoWarmUp() {
 	
 		SpawnThemAll(2);
 		SM::UnspawnPlayersChangingClan();
-		log("Warmup loop");
 		WarmUp::Loop();
 		XmlRpc::Loop();
 
@@ -2000,8 +1999,7 @@ MB_StopMap = True;
 
 }
 Void CheckMapEnd() {
-if(G_RoundScores[1]>=S_PointLimitToWin || G_RoundScores[2]>=S_PointLimitToWin)
-	log("Score reached");
+if(G_RoundScores[1]>=S_PointLimitToWin || G_RoundScores[2]>=S_PointLimitToWin){
 	if(G_RoundScores[2]>=G_RoundScores[1]+S_PointGapToWin){
 		//Team 2 win
 		log("Team2 win");
@@ -2017,6 +2015,7 @@ if(G_RoundScores[1]>=S_PointLimitToWin || G_RoundScores[2]>=S_PointLimitToWin)
 		G_RoundScores = [1 => 0, 2 => 0];
 		UpdateHeader();
 		EndMap();
+	}
 	}
 }
 //EndMap
