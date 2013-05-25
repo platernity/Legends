@@ -20,6 +20,8 @@
 #Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
 #Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
 #Include "Libs/Nadeo/ShootMania/WarmUpSimple.Script.txt" as WarmUp
+#Include "Libs/Nadeo/ShootMania/ScoresTable.Script.txt" as ScoresTable
+#Include "Libs/Nadeo/Layers.Script.txt" as Layers
 
 /* SETTINGS */
 #Setting	S_FreeMode					True	as _("Free Mode")
@@ -29,13 +31,14 @@
 #Setting	S_WarmUpDuration			90		as _("Warmup duration")
 #Setting	S_PointGapToWin				2		as _("Point gap to win map")
 #Setting	S_PointLimitToWin			9		as _("Point limit to win map")
+#Setting	S_MapsToWin					3		as _("Maps to win to win match")
 #Setting 	S_PointLimitDecisiveRound	15		as _("Decisive point limit")
 #Setting 	S_TimeBetweenRounds			2.		as _("Time between Rounds")
 #Setting 	S_UsePlayerClublinks		True	as _("Use player clublinks")
 #Setting 	S_UseLaserVsBullets			True	as _("Use laser vs rockets")
 #Setting	S_UseAmmoBonusOnHit			True	as _("Use Ammo reload on hit")
 #Setting 	S_AttackerPingTime			3		as _("Attacker ping time on hit")
-#Setting 	S_DefenderRespawnTime		5		as _("Defender respawn time on hit")
+#Setting 	S_DefenderRespawnTime		1		as _("Defender respawn time on hit")
 #Setting	S_FriendlyFire				False	as _("Friendly fire")
 
 //To be removed
@@ -43,7 +46,7 @@
 #Setting	S_RedBots			0	as _("Red bots")
 
 //* CONSTANTS */
-#Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nThe teams get 1 point for a successfull attack and 1 point for a successfull defence. First team to reach score limit win the map.")
+#Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nEach teams get 1 point for any successfull attack. First team to reach score limit win the map.")
 #Const	C_PlayerNeeded	8 		//Number of players needed to start match
 #Const	C_NoWarmUp		False	//For testing purposes only
 #Const	C_UseBots		True	//For testing purposes only
@@ -55,6 +58,17 @@
 #Const	C_BigMessageTime			2500		// Time BigMessage stay
 #Const	C_StatusMessageTime			2500		// Time StatusMessage stay
 #Const	C_PoleUITime				2000		// Time PoleUI stay
+
+#Const	C_UI_Colors [
+	"BG"		=> "fffa",
+	"Separator"	=> "eeef",
+	"Text"		=> "fffc"
+]
+
+#Const C_SequenceWarmUp			1	///< Scores table mode warm up
+#Const C_SequencePlaying		2	///< Scores table mode playing
+#Const C_SequencePodium			3	///< Scores table mode podium
+
 /* GLOBALES */
 declare	Boolean G_CapturingPossible;			// Whether it's possible to capture the goal
 declare	Ident[]	G_Team1Players;					// All players from Team 1
@@ -73,7 +87,13 @@ declare Boolean G_Team1WonDefense;				//
 declare Boolean G_Team2WonDefense;				//
 declare Boolean	G_Team1WonAttack;				//
 declare Boolean	G_Team2WonAttack;				//
+declare Integer G_BlueBots;
+declare Integer G_RedBots;
+declare CSmPlayer[]	G_PlayingPlayers;	//All Playing players
 
+//Scores
+declare Integer[Integer] G_MapScores;			// Number of map won by each clan
+declare Integer[Integer] G_RoundScores;			// Number of rounds won by each clan
 
 //UI
 declare CUILayer LayerScores;
@@ -88,7 +108,6 @@ declare Integer G_LastBigMessage;				// Time of LastBigMessage
 declare Integer G_LastStatusMessage;			// Time of LastStatusMessage
 declare Integer G_LastPoleUI;					// Time of LastPoleUI
 declare CSmPlayer G_LastPlayerPoleUI;			// Last Player needs PoleUIReset
-
 declare Boolean	G_Playing;
 
 //Logs
@@ -109,6 +128,7 @@ InitGameSettings();
 
 ***StartMap***
 ***
+
 Mode::Ladder_OpenMatch_All();
 InitUI();
 InitLayers();
@@ -137,7 +157,7 @@ G_LogTime=StartTime+1000;
 ***OnNewPlayer***
 ***
 EditUI(Player);
-EditValues();
+EditValues(Player);
 ***
 
 ***OnNewSpectator***
@@ -152,6 +172,15 @@ if(Now>=G_LogTime && C_UsePlayLoopLogs){
 	//logs
 	log("playloop logs");
 }
+if(C_UseBots){
+	if(G_BlueBots!=S_BlueBots){
+		G_BlueBots=S_BlueBots;
+		Users_SetNbFakeUsers(G_BlueBots,G_RedBots);
+	}else if(G_RedBots!=S_RedBots){
+		G_RedBots=S_RedBots;
+		Users_SetNbFakeUsers(G_BlueBots,G_RedBots);
+	}
+}
 UpdateUI();
 SpawnPlayers();
 HandlePendingEvents();
@@ -165,14 +194,12 @@ SetPoints();
 ***
 AttributePoints();
 DisplayResults();
-CheckMatchEnd();
+CheckMapEnd();
 ***
 
 ***EndMap***
 ***
 EndMapUI();
-AnnounceLegendTeam();
-EndMatch();
 ***
 
 ***EndServer***
@@ -184,7 +211,613 @@ Clean();
 	FUNCTIONS
 *****************************************************/
 //Other
-/// Update the Hud3dMarkers.
+
+// Update the score summary header.
+Void UpdateHeader() {
+	declare CSmPlayer Player1 <=> Null;
+	declare CSmPlayer Player2 <=> Null;
+	declare HeaderClanScores = Integer[Integer];
+
+	HeaderClanScores = [1 => G_MapScores[1], 2 => G_MapScores[2]];
+
+	// Find a captain for each clan
+	foreach (Player in Players) {
+		if (Player.CurrentClan == 1) {
+			Player1 <=> Player;
+		} else if (Player.CurrentClan == 2) {
+			Player2 <=> Player;
+		}
+	}
+
+	UIManager.UIAll.OverlayScoreSummary = True;
+	if (Player1 != Null) {
+		UIManager.UIAll.ScoreSummary_Player1 = Player1.Id;
+		UIManager.UIAll.ScoreSummary_Points1 = G_RoundScores[1];
+		UIManager.UIAll.ScoreSummary_MatchPoints1 = HeaderClanScores[1];
+	} else {
+		UIManager.UIAll.ScoreSummary_Player1 = NullId;
+		UIManager.UIAll.ScoreSummary_Points1 = 0;
+		UIManager.UIAll.ScoreSummary_MatchPoints1 = 0;
+	}
+
+	if (Player2 != Null) {
+		UIManager.UIAll.ScoreSummary_Player2 = Player2.Id;
+		UIManager.UIAll.ScoreSummary_Points2 = G_RoundScores[2];
+		UIManager.UIAll.ScoreSummary_MatchPoints2 = HeaderClanScores[2];
+	} else {
+		UIManager.UIAll.ScoreSummary_Player2 = NullId;
+		UIManager.UIAll.ScoreSummary_Points2 = 0;
+		UIManager.UIAll.ScoreSummary_MatchPoints2 = 0;
+	}
+}
+// Player List Manialink for scoretable
+Text CreatePlayersListBig(Integer _Mode, Integer _Nb, Real _Scale) {
+	declare ML ="";
+	declare PosX = 0.;
+	declare PosY = 0.;
+	declare Col = 2.;
+	declare PlayersByCol = MathLib::NearestInteger(_Nb/Col);
+	declare S = _Scale;
+	declare K = 1;
+	declare AvatarSize = 10.75;
+
+	declare RocketHidden = 0;
+	if (_Mode == 2) RocketHidden = 1;
+
+	ML ^= """
+<framemodel posn="0 0" id="Frame_PlayerLeft">
+	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" image="file://Media/Manialinks/ShootMania/Elite/NotReady.dds" id="Quad_NotReady" />
+	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" image="file://Media/Manialinks/ShootMania/Elite/Ready.dds" hidden="1" id="Quad_Ready" />
+	<quad posn="{{{0*S}}} 0 1" sizen="{{{81.8*S}}} 11.5" bgcolor="a007" id="Quad_Attacker" hidden="1" />
+	<quad posn="{{{0*S}}} 0 5" sizen="{{{81.8*S}}} 11.5" bgcolor="0009" id="Quad_Eliminated" hidden="1" />
+	<quad posn="{{{(3*S)+6}}} {{{11.5/-2.}}} 2" sizen="{{{AvatarSize}}} {{{AvatarSize}}}" halign="center" valign="center" bgcolor="0003" opacity="0.9" id="Quad_Avatar" />
+	<label posn="{{{17*S}}} -6.4 3" sizen="{{{45*S}}} 12" textsize="3" valign="bottom" id="Label_Name" />
+	<label posn="{{{17*S}}} -10.4 3" sizen="{{{24*S}}} 5" textsize="1" valign="bottom" textemboss="1" id="Label_Rank" />
+	<frame posn="{{{14.6*S}}} -2.7 4" id="Frame_Stars">
+		<quad posn="0 0" sizen="2 2" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_5" hidden="1" />
+		<quad posn="0 -1.5" sizen="2 2" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_4" hidden="1" />
+		<quad posn="0 -3" sizen="2 2" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_3" hidden="1" />
+		<quad posn="0 -4.5" sizen="2 2" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_2" hidden="1" />
+		<quad posn="0 -6" sizen="2 2" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_1" hidden="1" />
+	</frame>
+	<frame posn="{{{63*S}}} -10.4 2" id="Frame_LadderPoints" hidden="1">
+		<quad posn="0 -2" sizen="{{{7*S}}} 7" halign="right" valign="bottom" style="Icons128x128_1" substyle="LadderPoints" />
+		<label posn="-8 0" sizen="{{{12*S}}} 5" textsize="1" textcolor="bb8" halign="right" valign="bottom" id="Label_LadderPoints" />
+	</frame>
+	<frame posn="{{{70*S}}} -5.5 2" id="Frame_DefPointsSimple">
+		<label posn="0 0" sizen="{{{5*S}}} 3" textsize="2" halign="left" valign="center" id="Label_DefPoints" />
+		<quad posn="-0.5 -0.2" sizen="5 5" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/Rocket.dds" hidden="{{{RocketHidden}}}" />
+	</frame>
+	<frame posn="{{{70*S}}} 0 2" id="Frame_DefPointsDetailed" hidden="1">
+		<label posn="0 -1.75" sizen="{{{5*S}}} 3" textsize="2" halign="left" valign="center" id="Label_DefLaser" />
+		<label posn="0 -5.25" sizen="{{{5*S}}} 3" textsize="2" halign="left" valign="center" id="Label_DefRocket" />
+		<label posn="0 -8.75" sizen="{{{5*S}}} 3" textsize="2" halign="left" valign="center" id="Label_DefNucleus" />
+		<quad posn="-0.5 -1.95" sizen="3 3" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/Laser.dds" />
+		<quad posn="-0.5 -5.45" sizen="3 3" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/Rocket.dds" />
+		<quad posn="-0.5 -8.95" sizen="3 3" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/Nucleus.dds" />
+	</frame>
+	<label posn="{{{76*S}}} -5.5 3" sizen="{{{5*S}}} 5" textsize="5" halign="left" valign="center" id="Label_AtkPoints" />
+</framemodel>
+<framemodel posn="0 0" id="Frame_PlayerRight">
+	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" halign="right" image="file://Media/Manialinks/ShootMania/Elite/NotReady.dds" id="Quad_NotReady" />
+	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" halign="right" image="file://Media/Manialinks/ShootMania/Elite/Ready.dds" hidden="1" id="Quad_Ready" />
+	<quad posn="{{{0*S}}} 0 1" sizen="{{{81.8*S}}} 11.5" bgcolor="a007" halign="right" id="Quad_Attacker" hidden="1" />
+	<quad posn="{{{0*S}}} 0 5" sizen="{{{81.8*S}}} 11.5" bgcolor="0009" halign="right" id="Quad_Eliminated" hidden="1" />
+	<quad posn="{{{(-3*S)-6}}} {{{11.5/-2.}}} 2" sizen="{{{AvatarSize}}} {{{AvatarSize}}}" halign="center" valign="center" bgcolor="0003" opacity="0.9" id="Quad_Avatar" />
+	<label posn="{{{-17*S}}} -6.4 3" sizen="{{{45*S}}} 12" textsize="3" halign="right" valign="bottom" id="Label_Name" />
+	<label posn="{{{-17*S}}} -10.4 3" sizen="{{{24*S}}} 5" textsize="1" halign="right" valign="bottom" textemboss="1" id="Label_Rank" />
+	<frame posn="{{{-14.6*S}}} -2.7 4" id="Frame_Stars">
+		<quad posn="0 0" sizen="2 2" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_5" hidden="1" />
+		<quad posn="0 -1.5" sizen="2 2" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_4" hidden="1" />
+		<quad posn="0 -3" sizen="2 2" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_3" hidden="1" />
+		<quad posn="0 -4.5" sizen="2 2" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_2" hidden="1" />
+		<quad posn="0 -6" sizen="2 2" halign="right" valign="center" style="BgRaceScore2" substyle="Fame" id="Quad_Star_1" hidden="1" />
+	</frame>
+	<frame posn="{{{-63*S}}} -10.4 2" id="Frame_LadderPoints" hidden="1">
+		<quad posn="{{{13*S}}} -2" sizen="{{{7*S}}} 7" valign="bottom" style="Icons128x128_1" substyle="LadderPoints" />
+		<label posn="{{{12*S}}} 0" sizen="{{{12*S}}} 5" textsize="1" textcolor="bb8" halign="right" valign="bottom" id="Label_LadderPoints" />
+	</frame>
+	<frame posn="{{{-70*S}}} -5.5 2" id="Frame_DefPointsSimple">
+		<label posn="0 0" sizen="{{{5*S}}} 3" textsize="2" halign="right" valign="center" id="Label_DefPoints" />
+		<quad posn="0.5 -0.2" sizen="5 5" halign="left" valign="center" image="file://Media/Manialinks/ShootMania/Common/Rocket2.dds" hidden="{{{RocketHidden}}}" />
+	</frame>
+	<frame posn="{{{-70*S}}} 0 2"id="Frame_DefPointsDetailed" hidden="1">
+		<label posn="0 -1.75" sizen="{{{5*S}}} 3" textsize="2" halign="right" valign="center" id="Label_DefLaser" />
+		<label posn="0 -5.25" sizen="{{{5*S}}} 3" textsize="2" halign="right" valign="center" id="Label_DefRocket" />
+		<label posn="0 -8.75" sizen="{{{5*S}}} 3" textsize="2" halign="right" valign="center" id="Label_DefNucleus" />
+		<quad posn="0.5 -1.95" sizen="3 3" halign="left" valign="center" image="file://Media/Manialinks/ShootMania/Common/Laser.dds" />
+		<quad posn="0.5 -5.45" sizen="3 3" halign="left" valign="center" image="file://Media/Manialinks/ShootMania/Common/Rocket.dds" />
+		<quad posn="0.5 -8.95" sizen="3 3" halign="left" valign="center" image="file://Media/Manialinks/ShootMania/Common/Nucleus.dds" />
+	</frame>
+	<label posn="{{{-76*S}}} -5.5 3" sizen="{{{5*S}}} 5" textsize="5" halign="right" valign="center" id="Label_AtkPoints" />
+</framemodel>
+""";
+	declare BgColor = C_UI_Colors["BG"];
+	if (_Mode == 2) BgColor = "667c";
+
+	for (J, 1, 2) {
+		for (I, 1, PlayersByCol) {
+			if (J % 2 == 1) {
+				ML ^= """
+<frame posn="{{{PosX}}} {{{PosY}}}">
+	<quad posn="0 0 -6" sizen="{{{81.8*S}}} 11.5" bgcolor="{{{BgColor}}}" />
+	<frameinstance modelid="Frame_PlayerLeft" id="Frame_Player_{{{K}}}" />
+</frame>
+""";
+			} else {
+				ML ^= """
+<frame posn="{{{PosX+(164*S/2.)}}} {{{PosY}}}">
+	<quad posn="0 0 -6" sizen="{{{81.8*S}}} 11.5" bgcolor="{{{BgColor}}}" halign="right" />
+	<frameinstance modelid="Frame_PlayerRight" id="Frame_Player_{{{K}}}" />
+</frame>
+""";
+			}
+			PosY -= 11.9;
+			K += 1;
+		}
+		PosX += 164*S/2.;
+		PosY = 0.;
+	}
+
+	return ML;
+}
+Text CreateLayerScoresTable(){
+	declare CW = 1.;
+declare SW = 1.;
+
+declare Team1Color = """{{{Teams[0].ColorPrimary.X}}} {{{Teams[0].ColorPrimary.Y}}} {{{Teams[0].ColorPrimary.Z}}}""";
+declare Team2Color = """{{{Teams[1].ColorPrimary.X}}} {{{Teams[1].ColorPrimary.Y}}} {{{Teams[1].ColorPrimary.Z}}}""";
+
+return """
+<quad posn="0 -0.5 -1" sizen="237 90" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_bg.dds" />
+<quad posn="-73.2 11 6" sizen="29 44.3" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_left.dds" colorize="{{{Team1Color}}}" />
+<quad posn=" 73.2 11 6" sizen="29 44.3" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_right.dds" colorize="{{{Team2Color}}}" />
+
+<!--<quad posn="-150 90" sizen="{{{50*CW}}} 20" halign="left" valign="top" style="TitleLogos" substyle="Title"/>-->
+
+<!-- **************** Scores table **************** -->
+<frame posn="0 34" id ="Frame_ScoresTable">
+	<!-- **************** Center panel **************** -->
+	<frame posn="0 0">		
+		<!-- **************** VS **************** -->
+		<frame posn="0 -11.7" id="Frame_VS">
+			<quad posn="-7 -2.5" sizen="15 15" halign="right" valign="bottom" style="Emblems" substyle="#1" />
+			<quad posn="7 -2.5" sizen="15 15" valign="bottom" style="Emblems" substyle="#2" />
+			<label posn="-46 1.5" sizen="46 5" textsize="4" halign="center" valign="bottom" scale="0.95" opacity="0.88" textemboss="1" id="Label_NameTeam1" />
+			<label posn=" 46 1.5" sizen="46 5" textsize="4" halign="center" valign="bottom" scale="0.95" opacity="0.88" textemboss="1" id="Label_NameTeam2" />
+		</frame>
+		<!-- **************** Players Ranking **************** -->
+		<frame posn="{{{-164*CW/2.}}} -16" id="Frame_Ranking">
+			{{{CreatePlayersListBig(1, C_PlayerNeeded, CW)}}}
+		</frame>
+	</frame>	
+	<!-- **************** Bottom panels **************** -->
+	<frame posn="{{{-164*CW/2.}}} -47">
+		<!-- **************** Laser stats **************** -->
+		<quad posn="{{{1*SW}}} -8.2" sizen="4 4" halign="left" valign="center" image="file://Media/Manialinks/ShootMania/Common/Laser.dds" />
+		<label posn="{{{6*SW}}} -8" sizen="{{{75*SW}}} 6" textsize="2" textcolor="{{{C_UI_Colors["Text"]}}}" valign="center" textemboss="1" text="{{{TextLib::Compose(_("Longest Laser: %1 by %2"), "-", "-")}}}" id="Label_LongestLaser" />
+		<!-- **************** Server info **************** -->
+		<label posn="{{{158*CW}}} -8" sizen="{{{75*SW}}} 5" textsize="2" textcolor="{{{C_UI_Colors["Text"]}}}" halign="right" valign="center" textemboss="1" text="{{{TextLib::Compose("%1: $<%2$>", _("Server"), "-")}}}" id="Label_ServerName" />
+		<quad posn="{{{163*SW}}} -8.2" sizen="4 4" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/Home.dds" />
+		<!-- **************** Game info **************** -->
+		<quad posn="{{{0.7*SW}}} -13.7" sizen="5 5" halign="left" valign="center" style="UIConstructionSimple_Buttons" substyle="Tools" />
+		<label posn="{{{6*SW}}} -13.5" sizen="{{{75*SW}}} 6" textsize="2" textcolor="{{{C_UI_Colors["Text"]}}}" valign="center" textemboss="1" text="{{{TextLib::Compose(_("Points limit: %1 | Points to win: %2"), "6", "8")}}}" id="Label_GameInfo" />
+		<label posn="{{{158*CW}}} -13.5" sizen="{{{75*SW}}} 5" textsize="2" textcolor="{{{C_UI_Colors["Text"]}}}" halign="right" valign="center" textemboss="1" text="{{{TextLib::Compose(_("Turns won: %1 - %2 | Eliminations: %3 - %4"), "0", "0","0", "0")}}}" id="Label_GoalAverage" />
+		<quad posn="{{{163*SW}}} -13.7" sizen="4 4" halign="right" valign="center" image="file://Media/Manialinks/ShootMania/Common/Score.dds" />
+	</frame>
+</frame>
+<script><!--
+#Include "TextLib" as TextLib
+
+declare CMlLabel	Label_NameTeam1;
+declare CMlLabel 	Label_NameTeam2;
+declare CMlFrame	Frame_Ranking;
+declare CMlLabel	Label_LongestLaser;
+declare CMlLabel	Label_ServerName;
+declare CMlLabel	Label_GameInfo;
+declare CMlLabel	Label_GoalAverage;
+
+Void UpdatePlayersList(
+	Integer				_AttackerKey, 
+	Text[Integer]		_Logins, 
+	Text[Integer]		_Names, 
+	Text[Integer]		_Zones,
+	Integer[Integer]	_Ranks,
+	Real[Integer]		_LadderPoints,
+	Boolean[Integer]	_Ready,
+	Integer[Integer]	_DefPoints, 
+	Integer[Integer]	_AtkPoints,
+	Integer				_Mode,
+	Integer[Integer][Integer] _DefHit,
+	Integer[Integer]	_Fames,
+	Ident[Integer]		_PlayersIds
+) {	
+	for (I, 1, {{{C_PlayerNeeded}}}) {
+		declare Frame_Player	<=> (Frame_Ranking.GetFirstChild("Frame_Player_"^I) as CMlFrame);
+
+		if (_Logins.existskey(I)) {
+			declare Quad_NotReady			<=> (Frame_Player.GetFirstChild("Quad_NotReady")			as CMlQuad);
+			declare Quad_Ready				<=> (Frame_Player.GetFirstChild("Quad_Ready")				as CMlQuad);
+			declare Quad_Avatar 			<=> (Frame_Player.GetFirstChild("Quad_Avatar")				as CMlQuad);
+			declare Quad_Eliminated			<=> (Frame_Player.GetFirstChild("Quad_Eliminated")			as CMlQuad);
+			declare Label_Name				<=> (Frame_Player.GetFirstChild("Label_Name")				as CMlLabel);
+			declare Label_Rank				<=> (Frame_Player.GetFirstChild("Label_Rank")				as CMlLabel);
+			declare Frame_Stars				<=> (Frame_Player.GetFirstChild("Frame_Stars")				as CMlFrame);
+			declare Label_DefPoints			<=> (Frame_Player.GetFirstChild("Label_DefPoints")			as CMlLabel);
+			declare Label_AtkPoints			<=> (Frame_Player.GetFirstChild("Label_AtkPoints")			as CMlLabel);
+			declare Quad_Attacker			<=> (Frame_Player.GetFirstChild("Quad_Attacker")			as CMlQuad);
+			declare Frame_LadderPoints		<=> (Frame_Player.GetFirstChild("Frame_LadderPoints")		as CMlFrame);
+			declare Label_LadderPoints		<=> (Frame_Player.GetFirstChild("Label_LadderPoints")		as CMlLabel);
+			declare Frame_DefPointsSimple	<=> (Frame_Player.GetFirstChild("Frame_DefPointsSimple")	as CMlFrame);
+			declare Frame_DefPointsDetailed	<=> (Frame_Player.GetFirstChild("Frame_DefPointsDetailed")	as CMlFrame);
+			declare Label_DefLaser			<=> (Frame_DefPointsDetailed.GetFirstChild("Label_DefLaser")	as CMlLabel);
+			declare Label_DefRocket			<=> (Frame_DefPointsDetailed.GetFirstChild("Label_DefRocket")	as CMlLabel);
+			declare Label_DefNucleus		<=> (Frame_DefPointsDetailed.GetFirstChild("Label_DefNucleus")	as CMlLabel);
+
+			declare Side = 1;
+			if (Label_Name.PosnX < 0) Side = -1;
+
+			Frame_Player.Show();
+			// Ready state
+			if (_Mode == {{{C_SequenceWarmUp}}}) {
+				Quad_Avatar.PosnX = {{{6 + (3*CW)}}} * Side;
+				Label_Name.PosnX = {{{17*CW}}} * Side;
+				Label_Rank.PosnX = {{{18*CW}}} * Side;
+				Frame_Stars.PosnX = {{{14.6*CW}}} * Side;
+				if (_Ready.existskey(I)) {
+					if (_Ready[I]) {
+						Quad_Ready.Show();
+						Quad_NotReady.Hide();
+					} else {
+						Quad_Ready.Hide();
+						Quad_NotReady.Show();
+					}
+				} else {
+					Quad_Ready.Hide();
+					Quad_NotReady.Show();
+				}
+			} else {
+				Quad_Avatar.PosnX = {{{6 + (0*CW)}}} * Side;
+				Label_Name.PosnX = {{{14*CW}}} * Side;
+				Label_Rank.PosnX = {{{15*CW}}} * Side;
+				Frame_Stars.PosnX = {{{11.6*CW}}} * Side;
+				Quad_Ready.Hide();
+				Quad_NotReady.Hide();
+			}
+			// Avatar
+			if (_Logins.existskey(I) && _Names.existskey(I)) {
+				Quad_Avatar.ChangeImageUrl("file://Avatars/"^_Logins[I]^"/Default");
+			} else {
+				Quad_Avatar.ChangeImageUrl("");
+			}
+			// Status
+			/*if (UI.UISequence == CUIConfig::EUISequence::Playing && _PlayersIds.existskey(I)) {
+				if (Players.existskey(_PlayersIds[I])) {
+					if (Players[_PlayersIds[I]].SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+						Quad_Eliminated.Show();
+					} else {
+						Quad_Eliminated.Hide();
+					}
+				} else {
+					Quad_Eliminated.Hide();
+				}
+			} else {
+				Quad_Eliminated.Hide();
+			}*/
+			// Name
+			if (_Names.existskey(I)) {
+				Label_Name.SetText("$s"^_Names[I]);
+			} else {
+				Label_Name.SetText("$s-");
+			}
+			// Rank
+			if (_Ranks.existskey(I) && _Ranks[I] > 0 && _Zones.existskey(I)) {
+				Label_Rank.SetText(TextLib::Compose("%1: %2", _Zones[I], TextLib::ToText(_Ranks[I])));
+			} else {
+				Label_Rank.SetText(TextLib::Compose("%1: %2", _("Other"), "-"));
+			}
+			// Stars Fames
+			if (_Fames.existskey(I)) {
+				declare Fame = _Fames[I];
+				if (Fame > 0 && Fame <= 5) {
+					declare Quad_Star_1 <=> (Frame_Stars.GetFirstChild("Quad_Star_1") as CMlQuad);
+					declare Quad_Star_2 <=> (Frame_Stars.GetFirstChild("Quad_Star_2") as CMlQuad);
+					declare Quad_Star_3 <=> (Frame_Stars.GetFirstChild("Quad_Star_3") as CMlQuad);
+					declare Quad_Star_4 <=> (Frame_Stars.GetFirstChild("Quad_Star_4") as CMlQuad);
+					declare Quad_Star_5 <=> (Frame_Stars.GetFirstChild("Quad_Star_5") as CMlQuad);
+					Frame_Stars.Show();
+					Quad_Star_1.Hide();
+					Quad_Star_2.Hide();
+					Quad_Star_3.Hide();
+					Quad_Star_4.Hide();
+					Quad_Star_5.Hide();
+
+					if (Fame >= 1) Quad_Star_1.Show();
+					if (Fame >= 2) Quad_Star_2.Show();
+					if (Fame >= 3) Quad_Star_3.Show();
+					if (Fame >= 4) Quad_Star_4.Show();
+					if (Fame >= 5) Quad_Star_5.Show();
+				} else {
+					Frame_Stars.Hide();
+				}
+			} else {
+				Frame_Stars.Hide();
+			}
+			// Ladder points
+			if (_Mode == {{{C_SequencePodium}}} && _LadderPoints.existskey(I) && _LadderPoints[I] >= 0) {
+				declare LadderPointsExplode = TextLib::Split(".", TextLib::ToText(_LadderPoints[I]));
+				declare LadderPoints = "0.0";
+				if (LadderPointsExplode.existskey(0)) LadderPoints = LadderPointsExplode[0];
+				if (LadderPointsExplode.existskey(1)) LadderPoints ^= "."^TextLib::SubString(LadderPointsExplode[1], 0, 2);
+
+				Frame_LadderPoints.Show();
+				Label_LadderPoints.SetText("$s$bb8+"^LadderPoints);
+			} else {
+				Frame_LadderPoints.Hide();
+			}
+			// DefPoints
+			if (_DefHit.existskey(I) && _DefHit[I][1] >= 0 && _DefHit[I][3] >= 0) {
+				Frame_DefPointsSimple.Hide();
+				Frame_DefPointsDetailed.Show();
+				if (_DefPoints.existskey(I)) {
+					Label_DefLaser.SetText("$s"^_DefHit[I][1]);
+					Label_DefRocket.SetText("$s"^_DefHit[I][2]);
+					Label_DefNucleus.SetText("$s"^_DefHit[I][3]);
+				} else {
+					Label_DefLaser.SetText("$s0");
+					Label_DefRocket.SetText("$s0");
+					Label_DefNucleus.SetText("$s0");
+				}
+			} else {
+				Frame_DefPointsSimple.Show();
+				Frame_DefPointsDetailed.Hide();
+				if (_DefPoints.existskey(I)) {
+					Label_DefPoints.SetText("$s"^_DefPoints[I]);
+				} else {
+					Label_DefPoints.SetText("$s0");
+				}
+			}
+			// AtkPoints
+			if (_AtkPoints.existskey(I)) {
+				Label_AtkPoints.SetText("$s"^_AtkPoints[I]);
+			} else {
+				Label_AtkPoints.SetText("$s0");
+			}
+			// Attacker
+			if (I == _AttackerKey && _Mode == {{{C_SequencePlaying}}}) {
+				Quad_Attacker.Show();
+			} else {
+				Quad_Attacker.Hide();
+			}
+		} else {
+			Frame_Player.Hide();
+		}
+	}
+}
+
+Void UpdateStats(
+	Text[Integer]		_Names,
+	Real[Integer]		_LaserLongest,
+	Integer[Integer]	_LaserHit,
+	Integer[Integer]	_LaserShot
+) {	
+	declare LaserLongest = Real[Integer];
+	foreach (Key => Distance in _LaserLongest) {
+		if (Distance > 0.) LaserLongest[Key] = Distance * -1.;
+	}
+	LaserLongest = LaserLongest.sort();
+	declare LaserAccuracy = Real[Integer];
+
+	foreach (Key => Nb in _LaserShot) {
+		if (Nb > 0 && _LaserHit.existskey(Key) && _LaserHit[Key] > 0) {
+			LaserAccuracy[Key] = ((_LaserHit[Key] * 1.) / (Nb * 1.)) * -100.;
+		}
+	}
+	LaserAccuracy = LaserAccuracy.sort();
+
+	declare Longest = "-";
+	declare LongestName = "-";
+	declare Accuracy = "-";
+	declare AccuracyName = "-";
+
+	foreach (Key => Distance in LaserLongest) {
+		Longest = TextLib::SubString(TextLib::ToText(Distance*-1.), 0, 5)^"m";
+		if (_Names.existskey(Key)) LongestName = "$<"^_Names[Key]^"$>";
+		break;
+	}
+
+	foreach (Key => Percentage in LaserAccuracy) {
+		Accuracy = _LaserHit[Key]^"/"^_LaserShot[Key]^" ("^TextLib::SubString(TextLib::ToText(Percentage*-1.), 0, 5)^"%)";
+		if (_Names.existskey(Key)) AccuracyName = _Names[Key];
+		break;
+	}
+
+	Label_LongestLaser.SetText(TextLib::Compose(_("Longest Laser: %1 by %2"), Longest, LongestName));
+}
+
+Void UpdateGameInfo(
+	Integer _PointsLimit,
+	Integer _PointsToWin,
+	Integer[Integer] _Turns,
+	Integer[Integer] _Eliminations
+) {
+	Label_GameInfo.SetText(TextLib::Compose(_("Points limit: %1 | Points to win: %2"), TextLib::ToText(_PointsLimit), TextLib::ToText(_PointsToWin)));
+
+	if (_Eliminations.existskey(1) && _Eliminations.existskey(2)) {
+		Label_GoalAverage.SetText(TextLib::Compose(_("Turns won: %1 - %2 | Eliminations: %3 - %4"), TextLib::ToText(_Turns[1]), TextLib::ToText(_Turns[2]), TextLib::ToText(_Eliminations[1]), TextLib::ToText(_Eliminations[2])));
+	} else {
+		Label_GoalAverage.SetText(TextLib::Compose(_("Turns won: %1 - %2"), TextLib::ToText(_Turns[1]), TextLib::ToText(_Turns[2])));
+	}
+}
+
+Void UpdatePlayersStatus(Boolean _Forced) {
+	declare netread Text[Integer] Net_LayerST_Logins for UI;
+
+	foreach (Player in Players) {
+		declare PrevSpawnStatus for Player = CSmPlayer::ESpawnStatus::Spawned;
+		if (PrevSpawnStatus != Player.SpawnStatus || _Forced) {
+			PrevSpawnStatus = Player.SpawnStatus;
+			if (!Net_LayerST_Logins.exists(Player.Login)) continue;
+
+			declare Frame_Player <=> (Frame_Ranking.GetFirstChild("Frame_Player_"^Net_LayerST_Logins.keyof(Player.Login)) as CMlFrame);
+			if (Frame_Player == Null) continue;
+
+			declare Quad_Eliminated <=> (Frame_Player.GetFirstChild("Quad_Eliminated") as CMlQuad);
+			declare netread Integer Net_LayerST_Mode for UI;
+
+			if (Net_LayerST_Mode == {{{C_SequencePlaying}}} && UI.UISequence == CUIConfig::EUISequence::Playing) {
+				if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+					Quad_Eliminated.Show();
+				} else {
+					Quad_Eliminated.Hide();
+				}
+			} else {
+				Quad_Eliminated.Hide();
+			}
+		}
+	}
+}
+
+main() {
+	Label_NameTeam1			<=> (Page.GetFirstChild("Label_NameTeam1")		as CMlLabel);
+	Label_NameTeam2			<=> (Page.GetFirstChild("Label_NameTeam2")		as CMlLabel);
+	Frame_Ranking			<=> (Page.GetFirstChild("Frame_Ranking")		as CMlFrame);
+	Label_LongestLaser		<=> (Page.GetFirstChild("Label_LongestLaser")	as CMlLabel);
+	Label_ServerName		<=> (Page.GetFirstChild("Label_ServerName")		as CMlLabel);
+	Label_GameInfo			<=> (Page.GetFirstChild("Label_GameInfo")		as CMlLabel);
+	Label_GoalAverage		<=> (Page.GetFirstChild("Label_GoalAverage")	as CMlLabel);
+
+	declare netread Integer				Net_LayerST_Update			for UI;
+	declare netread Integer				Net_LayerST_AttackerKey		for UI;
+	declare netread Text[Integer]		Net_LayerST_Logins			for UI;
+	declare netread Integer[Integer]	Net_LayerST_AtkPoints		for UI;
+	declare netread Integer[Integer]	Net_LayerST_DefPoints		for UI;
+	declare netread Real[Integer]		Net_LayerST_LaserLongest	for UI;
+	declare netread Integer[Integer]	Net_LayerST_LaserShot		for UI;
+	declare netread	Integer[Integer]	Net_LayerST_LaserHit		for UI;
+	declare netread Integer				Net_LayerST_PointsLimit		for UI;
+	declare netread Integer				Net_LayerST_PointsToWin		for UI;
+	declare netread Integer[Integer]	Net_LayerST_Turns			for UI;
+	declare netread Integer[Integer]	Net_LayerST_Eliminations	for UI;
+	declare netread Boolean[Integer]	Net_LayerST_Ready			for UI;
+	declare netread Integer				Net_LayerST_Mode			for UI;
+	declare netread Integer[Integer][Integer] Net_LayerST_DefHit	for UI;
+
+	declare Text[Integer]		Logins;
+	declare Text[Integer]		Names;
+	declare Integer[Integer]	LadderRanks;
+	declare Text[Integer]		Zones;
+	declare Integer				Order;
+	declare Real[Integer]		LadderPoints;
+	declare Integer[Integer]	Fames;
+	declare Ident[Integer]		PlayersIds;
+
+	declare LastUpdate = Net_LayerST_Update;
+	declare PrevUISequence = CUIConfig::EUISequence::None;
+	declare PrevServerName = "";
+
+	while (True) {
+		yield;
+
+		if (InputPlayer == Null) continue;
+		if (!PageIsVisible) continue;
+
+		if (PrevServerName != CurrentServerName) {
+			PrevServerName = CurrentServerName;
+			Label_ServerName.SetText(TextLib::Compose("%1: $<%2$>", _("Server"), CurrentServerName));
+		}
+
+		if (LastUpdate != Net_LayerST_Update) {
+			LastUpdate = Net_LayerST_Update;
+
+			UpdatePlayersStatus(True);
+
+			if (Teams[0].ColorizedName == "$<$00fBlue$>") Label_NameTeam1.SetText("$<$fffBlue$>");
+			else Label_NameTeam1.SetText(Teams[0].ColorizedName);
+			if (Teams[1].ColorizedName == "$<$f00Red$>") Label_NameTeam2.SetText("$<$fffRed$>");
+			else Label_NameTeam2.SetText(Teams[1].ColorizedName);
+
+			Logins = Net_LayerST_Logins;
+
+			if (Net_LayerST_AttackerKey <= 0) Order = -1;
+			else if (Net_LayerST_AttackerKey <= 3) Order = Net_LayerST_AttackerKey;
+			else Order = Net_LayerST_AttackerKey - 3;
+
+			Names.clear();
+			LadderRanks.clear();
+			foreach (Score in Scores) {
+				if (Logins.exists(Score.User.Login)) {
+					declare Key = Logins.keyof(Score.User.Login);
+					Names[Key] = Score.User.Name;
+					LadderRanks[Key] = Score.User.LadderRank;
+					LadderPoints[Key] = Score.LadderScore;
+					Fames[Key] = Score.User.FameStars;
+
+					declare ZonePath = "";
+					if (Score.User.ZonePath != "") {
+						declare ExplodeZonePath = TextLib::Split("|", Score.User.ZonePath);
+						if (ExplodeZonePath.existskey(1)) ZonePath = ExplodeZonePath[1];
+					}
+					Zones[Key] = ZonePath;
+				}
+			}
+			/*foreach (Player in Players) {
+				if (Logins.exists(Player.Login)) {
+					declare Key = Logins.keyof(Player.Login);
+					PlayersIds[Key] = Player.Id;
+				}
+			}*/
+
+			UpdatePlayersList(
+				Net_LayerST_AttackerKey, 
+				Logins, 
+				Names, 
+				Zones,
+				LadderRanks,
+				LadderPoints,
+				Net_LayerST_Ready, 
+				Net_LayerST_DefPoints, 
+				Net_LayerST_AtkPoints,
+				Net_LayerST_Mode,
+				Net_LayerST_DefHit,
+				Fames,
+				PlayersIds
+			);
+
+			UpdateStats(
+				Names,
+				Net_LayerST_LaserLongest,
+				Net_LayerST_LaserHit,
+				Net_LayerST_LaserShot
+			);
+
+			UpdateGameInfo(
+				Net_LayerST_PointsLimit,
+				Net_LayerST_PointsToWin,
+				Net_LayerST_Turns,
+				Net_LayerST_Eliminations
+			);
+		}
+
+		if (PrevUISequence != UI.UISequence) {
+			PrevUISequence = UI.UISequence;
+
+			if (UI.UISequence != CUIConfig::EUISequence::Playing) {
+				for (I, 1, {{{C_PlayerNeeded}}}) {
+					declare Frame_Player	<=> (Frame_Ranking.GetFirstChild("Frame_Player_"^I)	as CMlFrame);
+					declare Quad_Eliminated <=> (Frame_Player.GetFirstChild("Quad_Eliminated") as CMlQuad);
+					Quad_Eliminated.Hide();
+				}
+			}
+		}
+
+		if (UI.UISequence == CUIConfig::EUISequence::Playing) UpdatePlayersStatus(False);
+	}
+}
+--></script>
+""";
+}
+// Update the Hud3dMarkers.
 Void UpdateMarkers(CSmPlayer Player) {
 	// Set the marker above the goals
 	foreach (Goal in BlockPoles) {
@@ -239,10 +872,14 @@ Void UpdateMarkers(CSmPlayer Player) {
 		
 
 		if (Name == "") continue;
+		
+		declare marker <=> UIManager.UILayerCreate();
+		marker.Type = CUILayer::EUILayerType::Markers;
 
-		UIManager.GetUI(Player).Hud3dMarkers ^= """
+		marker.ManialinkPage ^= """
 			<marker {{{Name}}} pos="{{{PosX}}} {{{PosY}}} {{{PosZ}}}" />
 		""";
+		UIManager.GetUI(Player).UILayers.add(marker);
 	}
 }
 //Create Marker Layer for Attacker
@@ -254,6 +891,10 @@ Void Team1WonAttack(){
 	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Capture;
 	UIManager.UIAll.BigMessageSoundVariant = 0;
 	UIManager.UIAll.StatusMessage = """$<{{{Players[G_Team1AttackingPlayer].Name}}}$> wins the Attack""";
+	UIManager.UIAll.SendNotice(
+		UIManager.UIAll.StatusMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
 	G_LastStatusMessage=Now;
 	G_Team1WonAttack=True;
 	G_Team2WonDefense=False;
@@ -263,12 +904,18 @@ Void Team1WonAttack(){
 		}
 	}
 	G_Pole1Captured = True;
+	G_RoundScores[1]+=1;
+	UpdateHeader();
 	
 }
 Void Team2WonAttack(){
 	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Capture;
 	UIManager.UIAll.BigMessageSoundVariant = 0;
 	UIManager.UIAll.StatusMessage = """$<{{{Players[G_Team2AttackingPlayer].Name}}}$> wins the Attack""";
+	UIManager.UIAll.SendNotice(
+		UIManager.UIAll.StatusMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
 	G_LastStatusMessage=Now;
 	G_Team2WonAttack=True;
 	G_Team1WonDefense=False;
@@ -279,11 +926,18 @@ Void Team2WonAttack(){
 		}
 	}
 	G_Pole2Captured = True;
+	G_RoundScores[2]+=1;
+	UpdateHeader();
 }
 Void Team1WonDefense(){
 	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
 	UIManager.UIAll.BigMessageSoundVariant = 0;
-	UIManager.UIAll.StatusMessage = """$<{{{Teams[0].ColorText}}}{{{Teams[0].Name}}} defense$> stopped $<{{{Players[G_Team2AttackingPlayer].Name}}}$>""";
+	//UIManager.UIAll.StatusMessage = """$<{{{Teams[0].ColorText}}}{{{Teams[0].Name}}} defense$> stopped $<{{{Players[G_Team2AttackingPlayer].Name}}}$>""";
+	UIManager.UIAll.StatusMessage = TextLib::Compose(_("$<%1$> defense stopped $<%2$>"), Teams[0].ColorizedName, Players[G_Team2AttackingPlayer].Name);
+	UIManager.UIAll.SendNotice(
+		UIManager.UIAll.StatusMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
 	G_LastStatusMessage=Now;
 	G_Team1WonDefense=True;
 	G_Team2WonAttack=False;
@@ -291,7 +945,12 @@ Void Team1WonDefense(){
 Void Team2WonDefense(){
 	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
 	UIManager.UIAll.BigMessageSoundVariant = 0;
-	UIManager.UIAll.StatusMessage = """$<{{{Teams[1].ColorText}}}{{{Teams[1].Name}}} defense$> stopped $<{{{Players[G_Team1AttackingPlayer].Name}}}$>""";
+	//UIManager.UIAll.StatusMessage = """$<{{{Teams[1].ColorText}}}{{{Teams[1].Name}}} defense$> stopped $<{{{Players[G_Team1AttackingPlayer].Name}}}$>""";
+	UIManager.UIAll.StatusMessage = TextLib::Compose(_("$<%1$> defense stopped $<%2$>"), Teams[1].ColorizedName, Players[G_Team1AttackingPlayer].Name);
+	UIManager.UIAll.SendNotice(
+		UIManager.UIAll.StatusMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
 	G_LastStatusMessage=Now;
 	G_Team2WonDefense=True;
 	G_Team1WonAttack=False;
@@ -307,17 +966,23 @@ Void ResetPoleUI(CSmBlockPole Pole){
 	G_LastPoleUI=Now;
 }
 Void ResetPoleUIPlayer(CSmPlayer Player){
-	declare UI <=> UIManager.GetUI(Player);
-	if (UI != Null) {
-		UI.GaugeRatio = -1.;
-		UI.GaugeMessage = "";
-		UI.GaugeClan = 0;
+	if(Player!=Null){
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI != Null) {
+			UI.GaugeRatio = -1.;
+			UI.GaugeMessage = "";
+			UI.GaugeClan = 0;
+		}
 	}
 }
 // Increases score points
 Void IncreaseScore(Ident _Id, Integer _Points) {
 	if (Players.existskey(_Id) && Players[_Id].Score != Null) {
-		Players[_Id].Score.Points += _Points;
+		if(_Points >=0){
+			Players[_Id].Score.Points += _Points;
+		}else{
+			Players[_Id].Score.Points -= -1*_Points;
+		}
 	}
 }
 // Spawn a Player
@@ -373,34 +1038,28 @@ Text GetRegion(CUser _User) {
 	}
 	return ZonePath;
 }
-// Create markers layer manialink
-Text GetMarkersLayerManialink() {
-	declare Size = 8.0;
-	declare SizeFactor = 9.0/16.0;
-	
-	declare Manialink = "";
-	foreach (Pole in BlockPoles) {
-		Manialink ^= """
-			<frame id="Pole_Marker{{{Pole.Id}}}" hidden="1">
-				<quad sizen="{{{Size*SizeFactor}}} {{{Size}}}" image="file://Media/Manialinks/Shootmania/Common/spawn.dds" halign="center" valign="center"/>
-			</frame>""";
-	}
-	return Manialink;
-}
 
 //StartServer
 Void InitGameSettings() {
 UseClans = True;
 UseForcedClans = True;
-UseLaserVsBullets = S_UseLaserVsBullets;
-UIManager.UIAll.NoticesFilter_HideMapWarning = True;
+//UIManager.UIAll.NoticesFilter_HideMapWarning = True;
 SM::SetupDefaultVisibility();
 SpawnScreen::CreateRules("Legends", Description, False);
+G_MapScores	= [1 => 0, 2 => 0];
+G_RoundScores = [1 => 0, 2 => 0];
+UpdateHeader();
+
 
 // Scores table
+
 LayerScores <=> UIManager.UILayerCreate();
 LayerScores.Type = CUILayer::EUILayerType::ScoresTable;
+LayerScores.ManialinkPage = CreateLayerScoresTable();
 UIManager.UIAll.UILayers.add(LayerScores);
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+UIManager.UIAll.ScoreTableOnlyManialink = True;
+
 // Teams layer
 LayerTeams <=> UIManager.UILayerCreate();
 Interface::SetLayerTeams(LayerTeams);
@@ -415,7 +1074,7 @@ UIManager.UIAll.UILayers.add(LayerInformation);
 // Markers layer
 LayerMarkers <=> UIManager.UILayerCreate();
 LayerMarkers.Type = CUILayer::EUILayerType::Markers;
-LayerMarkers.ManialinkPage = GetMarkersLayerManialink();
+//LayerMarkers.ManialinkPage = GetMarkersLayerManialink();
 UIManager.UIAll.UILayers.add(LayerMarkers);
 
 }
@@ -430,15 +1089,17 @@ UIManager.UIAll.ScoreTableOnlyManialink = True;
 }
 Void InitLayers() {
 // Layers
-LayerScores.IsVisible = True;
+//LayerScores.IsVisible = True;
 LayerTeams.IsVisible = True;
 LayerInformation.IsVisible = True;
 LayerMarkers.IsVisible = True;
 //LayerScores.ManialinkPage = GetScoresTable();
 }
 Void InitValues() {
+UseLaserVsBullets = S_UseLaserVsBullets;
 G_RoundCounter=0;
 UseAmmoBonusOnHit = S_UseAmmoBonusOnHit;
+G_RoundScores = [1 => 0, 2 => 0];
 }
 Void PrepareMatch() {
 Score::MatchBegin();
@@ -501,7 +1162,9 @@ Void StartWarmup() {
 	}
 	
 	if(C_UseBots){
-		Users_SetNbFakeUsers(S_BlueBots,S_RedBots);
+		G_BlueBots=S_BlueBots;
+		G_RedBots=S_RedBots;
+		Users_SetNbFakeUsers(G_BlueBots,G_RedBots);
 	}
 	WarmUp::Start();
 	
@@ -537,7 +1200,7 @@ if(S_FreeMode){
 		StartWarmup();
 	}
 }else{
-	if (PlayersNbTotal < C_PlayerNeeded || PlayersNbTotal > C_PlayerNeeded) {
+	if (PlayersNbTotal < C_PlayerNeeded) {
 		StartWarmup();
 	}
 }
@@ -547,11 +1210,18 @@ if(S_FreeMode){
 Void SetTeams() {
 	G_Team1Players.clear();
 	G_Team2Players.clear();
+	G_PlayingPlayers.clear();
 	foreach(Player in Players){
 	if(Player.CurrentClan==1){
-		G_Team1Players.add(Player.Id);	
+		if(S_FreeMode || G_Team1Players.count<C_PlayerNeeded/2){
+			G_Team1Players.add(Player.Id);
+			G_PlayingPlayers.add(Player);
+		}
 	}else if(Player.CurrentClan==2){
-		G_Team2Players.add(Player.Id);
+		if(S_FreeMode || G_Team2Players.count<C_PlayerNeeded/2){
+			G_Team2Players.add(Player.Id);
+			G_PlayingPlayers.add(Player);
+		}
 	}
 	
 }
@@ -582,9 +1252,10 @@ Void SetSpawnsAndPoles() {
 }
 Void AnnounceAttackers() {
 UIManager.UIAll.BigMessage = """$<{{{Players[G_Team1AttackingPlayer].Name}}}$> VS $<{{{Players[G_Team2AttackingPlayer].Name}}}$>""";
-UIManager.UIAll.SendNotice("",
+UIManager.UIAll.SendNotice(
+		UIManager.UIAll.BigMessage,
 		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
-		CUIConfig::EUISound::StartRound, 0);
+		CUIConfig::EUISound::Silence, 0);
 G_LastBigMessage = Now;
 }
 Void StartPlay() {
@@ -601,7 +1272,19 @@ if (UI != Null) {
 	UI.UILayers.add(LayerPosition);
 }
 }
-Void EditValues() {
+Void EditValues(CSmPlayer Player) {
+/*
+	log(ClansNbPlayers[1]^" clans "^ClansNbPlayers[2]);
+	if(Players[Player.Id]==Null){
+		if(ClansNbPlayers[1]<ClansNbPlayers[2]){
+			This.SetPlayerClan(Player, 1);
+		}else if(ClansNbPlayers[1]>ClansNbPlayers[2]){
+			This.SetPlayerClan(Player, 2);
+		}else{
+			This.SetPlayerClan(Player, 1);
+		}
+	}
+*/
 }
 //OnNewSpectator
 Void PrepareUIForSpectator(CSmPlayer Spectator) {
@@ -645,13 +1328,24 @@ Void UpdateUI(){
 }
 Void SpawnPlayers() {
 	if(Now<=StartTime){
-	foreach (Player in Players) {
+	foreach (Player in G_PlayingPlayers) {
 	
 	switch (Player.SpawnStatus) {
 		case CSmPlayer::ESpawnStatus::NotSpawned: {
 			// Player not spawned -> Spawn him!
 			//log(Now^" startTime: "^StartTime);
-			if (!Player.RequestsSpectate) {
+			if (!Player.RequestsSpectate && Player.CurrentClan!=0) {
+				SpawnThePlayer(Player);
+				//UpdateMarkers(Player);
+			} else if(!Player.RequestsSpectate){
+				//New Player
+				if(ClansNbPlayers[1]<ClansNbPlayers[2]){
+					This.SetPlayerClan(Player, 1);
+				}else if(ClansNbPlayers[1]>ClansNbPlayers[2]){
+					This.SetPlayerClan(Player, 2);
+				}else{
+					This.SetPlayerClan(Player, 1);
+				}
 				SpawnThePlayer(Player);
 			}
 		}
@@ -876,7 +1570,7 @@ log("team1 and team2 won defense");
 //EndTime
 if (!MB_StopRound && Now>=EndTime) {
 	G_CapturingPossible = False;
-	
+	SM::UnspawnAllPlayers();
 	// Round winner found
 	foreach(Pole in BlockPoles){
 		if(Pole.Gauge.ValueReal<1.0){
@@ -896,25 +1590,72 @@ if (!MB_StopRound && Now>=EndTime) {
 
 }
 
+
 //EndRound
 Void AttributePoints() {
 	G_RoundCounter+=1;
 }
 Void DisplayResults() {
 sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
-foreach(Player in Players){
+foreach(Player in G_PlayingPlayers){
 		ResetPoleUIPlayer(Player);
 	}
 sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
 }
-Void CheckMatchEnd() {
+Void EndMap() {
+log("End Map");
+if(G_MapScores[1]>=S_MapsToWin){
+	G_MapScores = [1 => 0, 2 => 0];
+	UpdateHeader();
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> wins the match!"), Teams[0].ColorizedName);
+	UIManager.UIAll.SendNotice(
+		UIManager.UIAll.BigMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
+	G_LastBigMessage=Now;
+	
+	
+}else if(G_MapScores[2]>=S_MapsToWin){
+	G_MapScores = [1 => 0, 2 => 0];
+	UpdateHeader();
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> wins the match!"), Teams[1].ColorizedName);
+	UIManager.UIAll.SendNotice(
+		UIManager.UIAll.BigMessage,
+		CUIConfig::ENoticeLevel::MapInfo, Null, CUIConfig::EAvatarVariant::Default, 
+		CUIConfig::EUISound::Silence, 0);
+	G_LastBigMessage=Now;
+}
+sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000));
+MB_StopMap = True;
+
+}
+Void CheckMapEnd() {
+if(G_RoundScores[1]>=S_PointLimitToWin || G_RoundScores[2]>=S_PointLimitToWin)
+	log("Score reached");
+	if(G_RoundScores[2]>=G_RoundScores[1]+S_PointGapToWin){
+		//Team 2 win
+		log("Team2 win");
+		G_MapScores[2]+=1;
+		G_RoundScores = [1 => 0, 2 => 0];
+		UpdateHeader();
+		EndMap();
+		
+	}else if(G_RoundScores[1]>=G_RoundScores[2]+S_PointGapToWin){
+		//Team 1 win
+		log("Team1 win");
+		G_MapScores[1]+=1;
+		G_RoundScores = [1 => 0, 2 => 0];
+		UpdateHeader();
+		EndMap();
+	}
 }
 //EndMap
 Void EndMapUI() {
-}
-Void AnnounceLegendTeam() {
-}
-Void EndMatch() {
+
 }
 //EndServer
 Void Clean() {
