@@ -38,7 +38,7 @@
 #Setting 	S_UsePlayerClublinks		True	as _("Use player clublinks")
 #Setting 	S_UseLaserVsBullets			True	as _("Use laser vs rockets")
 #Setting	S_UseAmmoBonusOnHit			True	as _("Use Ammo reload on hit")
-#Setting 	S_AttackerPingTime			3		as _("Attacker ping time on hit")
+#Setting 	S_AttackerPingTime			5		as _("Attacker ping time on hit")
 #Setting 	S_DefenderRespawnTime		5		as _("Defender respawn time on hit")
 #Setting	S_FriendlyFire				False	as _("Friendly fire")
 #Setting	S_GetAPointForDefense		False	as _("Get a point for successfull defense")
@@ -47,11 +47,11 @@
 //To be removed
 #Setting	S_BlueBots			0		as _("Blue bots")
 #Setting	S_RedBots			0		as _("Red bots")
-#Setting	S_UseSimpleScore	True	as _("Use simple Score")
+#Setting	S_UseSimpleScore	False	as _("Use simple Score")
 
 //* CONSTANTS */
-#Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nEach teams get 1 point for any successfull attack. First team to reach score limit win the map.")
-#Const DescriptionWithDefensePoints _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nTeams get 1 point for a successfull attack and 1 point for a successfull defense. First team to reach score limit win the map.")
+#Const Description _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nEach teams get 1 point for any successfull attack. First team to reach score limit win the map.\nWhen attacker hits the other attacker it pings him.\nWhen defender kills an opponent defender, he'll respawn.")
+#Const DescriptionWithDefensePoints _("TYPE: Team versus Team (4 vs 4)\nOBJECTIVE:\nOne attacker plays against three defenders on each side. The attacker must capture the pole or eliminate the defenders. The defenders must eliminate the attacker or prevent him to capture the pole.\nThe attacker uses the Laser while the defenders have the Rocket.\nTeams get 1 point for a successfull attack and 1 point for a successfull defense. First team to reach score limit win the map.\nWhen attacker hits the other attacker it pings him.\nWhen defender kills an opponent defender, he'll respawn.")
 #Const	C_PlayerNeeded	8 		//Number of players needed to start match
 #Const	C_MaxPlayers	10		//Number of players max for a match (FreeMode)
 #Const	C_NoWarmUp		False	//For testing purposes only
@@ -120,9 +120,16 @@ declare Integer G_LastStatusMessage;			// Time of LastStatusMessage
 declare Integer G_LastPoleUI;					// Time of LastPoleUI
 declare CSmPlayer[] G_LastPlayerPoleUI;			// Last Players needs PoleUIReset
 declare Boolean	G_Playing;
+declare Integer[Integer] G_AttackerMarkerTime;	// Time for Reset AttackerMarker
+declare Boolean G_Team1MarkerCreated;
+declare Boolean G_Team2MarkerCreated;
 
 //Logs
 declare Integer G_LogTime;
+
+//SettingsCache
+declare Boolean G_FreeMode;
+declare Boolean	G_RestartNeeded;
 
 
 
@@ -162,6 +169,8 @@ SetSpawnsAndPoles();
 AnnounceAttackers();
 StartPlay();
 G_LogTime=StartTime+1000;
+G_Team1MarkerCreated=False;
+G_Team2MarkerCreated=False;
 ***
 
 ***OnNewPlayer***
@@ -248,7 +257,6 @@ Text GetRegion(CUser _User) {
  *	@return	The players list Text
  */
 Text CreatePlayersListBig(Integer _Mode, Real _Scale) {
-log("Create Players");
 	declare ML ="";
 	declare PosX = 0.;
 	declare PosY = 0.;
@@ -935,6 +943,8 @@ main() {
 }
 --></script>
 """;
+//In dev
+return "";
 return ManiaLink;
 }
 /** Update the score table manialink string.
@@ -1152,9 +1162,9 @@ Integer CanStartTurn(Boolean _MinimumCriteria) {
 	// Can't start round if ...
 	foreach (ClanNumber => ClanOrder in WarmUp::GetOrder()) {
 		// ... a slot is empty
-		if (!S_FreeMode  && ClanOrder.count != C_PlayerNeeded/2) {
+		if (!G_FreeMode  && ClanOrder.count != C_PlayerNeeded/2) {
 			return -1;
-		} else if (S_FreeMode && ClanOrder.count < 2) {
+		} else if (G_FreeMode && ClanOrder.count < 2) {
 			return -3;
 		}
 		foreach (PlayerId => PlayerOrder in ClanOrder) {
@@ -1197,7 +1207,7 @@ Integer CanStartTurn(Boolean _MinimumCriteria) {
 		if ((NbAtkReady >= 1) && (NbDefReady >= 1)) return 1;
 		else return -4;
 	} else {
-		if (S_FreeMode) {
+		if (G_FreeMode) {
 			if((NbAtkReady == NbAtk) && (NbDefReady == NbDef)) return 1;
 			else return -5;
 		} else {
@@ -1208,10 +1218,25 @@ Integer CanStartTurn(Boolean _MinimumCriteria) {
 
 	return -6;
 }
+//Check if settings changed
+Void CheckSettings(Boolean restart){
+	if (G_FreeMode!=S_FreeMode){
+		
+		if(restart){
+			UIManager.UIAll.SendChat("$f90Change mode and start a new map");
+			sleep(1000);
+			MatchEndRequested = True;
+		}else if(!G_RestartNeeded){
+			G_RestartNeeded=True;
+			UIManager.UIAll.SendChat("$f90Need to restart to apply Settings");
+		}
+	}
+}
 // ---------------------------------- //
 /// Warmup.
 Void DoWarmUp() {
 	// Waiting that the UI receives initial data
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
 	MB_Sleep(1000);
 	
 	if (MB_UseScriptCallbacks) XmlRpc.SendCallback("BeginWarmup", Json::Enfold(Json::Stringify("AllReady", False)));
@@ -1243,7 +1268,7 @@ Void DoWarmUp() {
 	UIManager.UIAll.StatusMessage = _("Press F6 once you're ready.");
 	
 	// Param: Duration, UseTeam, UseOrder, NumberOfPlayers
-	if(S_FreeMode){
+	if(G_FreeMode){
 		WarmUp::Before(S_WarmUpDuration, True, True, C_MaxPlayers/2);
 		
 	}else{
@@ -1263,7 +1288,8 @@ Void DoWarmUp() {
 				DisplayHitDistance(Event.Shooter, Event.Victim, True);
 			}
 		}*/
-	
+		//Settingscheck
+		CheckSettings(True);
 		SpawnThemAll(2);
 		
 		SM::UnspawnPlayersChangingClan();
@@ -1326,7 +1352,7 @@ Void DoWarmUp() {
 
 	// ---------------------------------- //
 	// Play team presentation
-	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
+	
 	MB_PlayersPresentationSequence();
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	G_MapOrder = WarmUp::GetOrder();
@@ -1439,6 +1465,43 @@ Void UpdateMarkers(CSmPlayer Player) {
 		UIManager.GetUI(Player).UILayers.add(marker);
 	}
 }*/
+// Create markers layer manialink
+Text GetMarkersLayerManialink(CSmBlockPole Pole, Text Name) {
+	declare Type = """label="{{{Name}}}" """;
+	declare PosX = Pole.Position.X;
+	declare PosY = Pole.Position.Y + 25;
+	declare PosZ = Pole.Position.Z;
+	declare Set = False;
+	
+	declare Manialink = "";
+		Manialink ^= """<marker {{{Type}}} pos="{{{PosX}}} {{{PosY}}} {{{PosZ}}}" />""";
+	return Manialink;
+}
+
+//
+Void InitialMarkers(Integer Clan){
+	foreach(Pole in BlockPoles){
+		if(Pole.Gauge.Clan == 2 ){
+			if(Clan == 0 || Clan == 1){
+			foreach(PlayerId in G_Team1DefenderPlayers){
+				UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
+				}
+			}
+			if(Clan == 0 || Clan == 2){
+			UIManager.GetUI(Players[G_Team2AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
+			}
+		}else if(Pole.Gauge.Clan == 1){
+			if(Clan == 0 || Clan == 2){
+			foreach(PlayerId in G_Team2DefenderPlayers){
+				UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
+			}
+			}
+			if(Clan == 0 || Clan == 1){
+			UIManager.GetUI(Players[G_Team1AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
+			}
+		}
+	}
+}
 // Increases score points
 Void IncreaseAtkPoints(Ident _Id, Integer _Points) {
 	if (Players.existskey(_Id) && Players[_Id].Score != Null) {
@@ -1475,6 +1538,8 @@ Void Team1WonAttack(){
 	G_Pole1Captured = True;
 	G_RoundScores[1]+=1;
 	UpdateHeader();
+	//Unspawn Player
+	UnspawnPlayer(Players[G_Team1AttackingPlayer]);
 	
 }
 Void Team2WonAttack(){
@@ -1498,6 +1563,8 @@ Void Team2WonAttack(){
 	G_Pole2Captured = True;
 	G_RoundScores[2]+=1;
 	UpdateHeader();
+	//Unspawn Player
+	UnspawnPlayer(Players[G_Team2AttackingPlayer]);
 }
 Void Team1WonDefense(){
 	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
@@ -1563,19 +1630,25 @@ Void ResetPoleUIPlayer(CSmPlayer Player){
 	}
 }
 
+//Create Attacker Marker
+Text CreateAttackerMarker(Integer Clan){
 
 
-// Create markers layer manialink
-Text GetMarkersLayerManialink(CSmBlockPole Pole, Text Name) {
-	declare Type = """label="{{{Name}}}" """;
-	declare PosX = Pole.Position.X;
-	declare PosY = Pole.Position.Y + 25;
-	declare PosZ = Pole.Position.Z;
-	declare Set = False;
+declare ManiaLink = "";
+	if(Clan==1){
+	declare LayerAttached = Layers::Attach("PlayerMarkersTeam1", NullId);
+	declare LayerUpdated = Layers::Update("PlayerMarkersTeam1", """<frame id="AtkMarker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");
 	
-	declare Manialink = "";
-		Manialink ^= """<marker {{{Type}}} pos="{{{PosX}}} {{{PosY}}} {{{PosZ}}}" />""";
-	return Manialink;
+		ManiaLink ^="""<marker playerlogin="{{{TextLib::MLEncode(Players[G_Team1AttackingPlayer].Login)}}}" manialinkframeid="AtkMarker" box="0 1.85 0" />""";
+	}else if(Clan == 2){
+	declare LayerAttached = Layers::Attach("PlayerMarkersTeam2", NullId);
+	declare LayerUpdated = Layers::Update("PlayerMarkersTeam2", """<frame id="AtkMarker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");
+	
+		ManiaLink ^="""<marker playerlogin="{{{TextLib::MLEncode(Players[G_Team2AttackingPlayer].Login)}}}" manialinkframeid="AtkMarker" box="0 1.85 0" />""";
+	}
+	
+	log(ManiaLink);
+	return ManiaLink;
 }
 
 //StartServer
@@ -1602,10 +1675,15 @@ G_LastBigMessage=0;
 G_LastStatusMessage=0;
 UIManager.UIAll.StatusMessage = "";
 
+
 }
 Void InitLayers() {
 // Layers
-
+//AtkMarkers
+declare LayerPlayerMarkersTeam1Id = Layers::Create("PlayerMarkersTeam1");
+Layers::GetFromId(LayerPlayerMarkersTeam1Id).Type = CUILayer::EUILayerType::Markers;
+declare LayerPlayerMarkersTeam2Id = Layers::Create("PlayerMarkersTeam2");
+Layers::GetFromId(LayerPlayerMarkersTeam2Id).Type = CUILayer::EUILayerType::Markers;
 
 LayerScores <=> UIManager.UILayerCreate();
 LayerScores.Type = CUILayer::EUILayerType::ScoresTable;
@@ -1641,7 +1719,8 @@ UseLaserVsBullets = S_UseLaserVsBullets;
 G_RoundCounter=0;
 UseAmmoBonusOnHit = S_UseAmmoBonusOnHit;
 G_RoundScores = [1 => 0, 2 => 0];
-
+G_RestartNeeded=False;
+G_FreeMode = S_FreeMode;
 G_AttackPoints.clear();
 }
 Void PrepareMatch() {
@@ -1699,7 +1778,7 @@ Void StartWarmup() {
 	log("warmup");
 	UseClans = True;
 	/*
-	if(S_FreeMode){
+	if(G_FreeMode){
 		WarmUp::Before(S_WarmUpDuration, True, True, 2);
 	}else{
 		WarmUp::Before(S_WarmUpDuration, True, True, C_PlayerNeeded/2);
@@ -1738,15 +1817,19 @@ Void InitRoundValues(){
 		declare Integer DefendHits for Score;
 		DefendHits = 0;
 	}
+
+	G_AttackerMarkerTime[1]=0;
+	G_AttackerMarkerTime[2]=0;
 }
 Void PrepareRound() {
 	SM::UnspawnAllPlayers();
 	Score::RoundBegin();
 	Victory::RoundBegin();
+	
 }
 
 Void CheckWarmup() {
-if(S_FreeMode){
+if(G_FreeMode){
 	if(PlayersNbTotal<4){
 		StartWarmup();
 	}
@@ -1764,12 +1847,12 @@ Void SetTeams() {
 	//G_PlayingPlayers.clear();
 	foreach(Player in Players){
 	if(Player.CurrentClan==1){
-		if(S_FreeMode || G_Team1Players.count<C_PlayerNeeded/2 && G_Team1Players.count>=C_MaxPlayers/2){
+		if(G_Team1Players.count<C_MaxPlayers/2){
 			G_Team1Players.add(Player.Id);
 			//G_PlayingPlayers.add(Player);
 		}
 	}else if(Player.CurrentClan==2){
-		if(S_FreeMode || G_Team2Players.count<C_PlayerNeeded/2){
+		if(G_Team2Players.count<C_MaxPlayers/2){
 			G_Team2Players.add(Player.Id);
 			//G_PlayingPlayers.add(Player);
 		}
@@ -1858,20 +1941,8 @@ Void StartPlay() {
 	}
 	
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
-	foreach(Pole in BlockPoles){
-		if(Pole.Gauge.Clan == 2){
-			foreach(PlayerId in G_Team1DefenderPlayers){
-				UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
-				
-			}
-			UIManager.GetUI(Players[G_Team2AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
-		}else if(Pole.Gauge.Clan == 1){
-			foreach(PlayerId in G_Team2DefenderPlayers){
-				UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
-			}
-			UIManager.GetUI(Players[G_Team1AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
-		}
-	}
+	InitialMarkers(0);
+	
 	
 }
 //OnNewPlayer
@@ -1914,6 +1985,7 @@ if (UI != Null) {
 }
 //PlayLoop
 Void UpdateUI(){
+	CheckSettings(False);
 	if(Now>= StartTime-3000 && !G_Playing){
 		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 		
@@ -1942,6 +2014,19 @@ Void UpdateUI(){
 			}
 		} 
 		G_LastPlayerPoleUI.clear();
+	}
+	//AttackerMarker handle
+	if(G_AttackerMarkerTime[1]!=0 && Now >= G_AttackerMarkerTime[1]){
+		declare LayerDetached = Layers::Detach("PlayerMarkersTeam1", NullId);
+		InitialMarkers(1);
+		G_AttackerMarkerTime[1]=0;
+		G_Team1MarkerCreated=False;
+	}
+	if(G_AttackerMarkerTime[2]!=0 && Now >= G_AttackerMarkerTime[2]){
+		declare LayerDetached = Layers::Detach("PlayerMarkersTeam2", NullId);
+		InitialMarkers(2);
+		G_AttackerMarkerTime[1]=0;
+		G_Team1MarkerCreated=False;
 	}
 }
 Void SpawnPlayers() {
@@ -2009,6 +2094,20 @@ foreach (Event in PendingEvents) {
 					if(Event.Shooter.Id == G_Team1AttackingPlayer){
 						if(Event.Victim.Id == G_Team2AttackingPlayer){
 							//Ping Victim
+							if(!G_Team1MarkerCreated){
+							foreach(PlayerId in G_Team1Players){
+								if(Players.existskey(PlayerId)){
+									declare UI <=> UIManager.GetUI(Players[PlayerId]);
+									if (UI != Null ) {
+										UI.Hud3dMarkers ^= CreateAttackerMarker(2);
+										
+									}
+								}
+							}
+							G_Team1MarkerCreated=True;
+							}
+							G_AttackerMarkerTime[2]=Now+S_AttackerPingTime*1000;
+							//declare LayerAttached = Layers::Attach("PlayerMarkersTeam2", NullId);
 							Event.ShooterPoints = 0;
 							Discard(Event);
 						}else{
@@ -2018,6 +2117,20 @@ foreach (Event in PendingEvents) {
 					}else if(Event.Shooter.Id == G_Team2AttackingPlayer){
 						if(Event.Victim.Id == G_Team1AttackingPlayer){
 							//Ping Victim
+							if(!G_Team1MarkerCreated){
+							foreach(PlayerId in G_Team2Players){
+								if(Players.existskey(PlayerId)){
+									declare UI <=> UIManager.GetUI(Players[PlayerId]);
+									if (UI != Null) {
+										UI.Hud3dMarkers ^= CreateAttackerMarker(1);
+										G_Team2MarkerCreated=True;
+									}
+								}
+							}
+							G_Team1MarkerCreated=True;
+							}
+							G_AttackerMarkerTime[2]=Now+S_AttackerPingTime*1000;
+							//declare LayerAttached = Layers::Attach("PlayerMarkersTeam1", NullId);
 							Event.ShooterPoints = 0;
 							Discard(Event);
 						}else{
@@ -2114,7 +2227,7 @@ foreach (Pole in BlockPoles) {
 			if(Pole.Sector.PlayersIds.count > 0){
 				foreach(PlayerId in Pole.Sector.PlayersIds){
 			
-					if(Pole.Gauge.Clan == 1 && PlayerId == G_Team1AttackingPlayer){
+					if(Pole.Gauge.Clan == 1 && PlayerId == G_Team1AttackingPlayer && Players[PlayerId].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned){
 						declare UI <=> UIManager.GetUI(Players[PlayerId]);
 						if (UI != Null) {
 							UI.GaugeRatio = Pole.Gauge.ValueReal;
@@ -2125,7 +2238,7 @@ foreach (Pole in BlockPoles) {
 							
 						}
 						Pole.Gauge.Speed = 1;
-					}else if(Pole.Gauge.Clan ==2 && PlayerId == G_Team2AttackingPlayer){
+					}else if(Pole.Gauge.Clan ==2 && PlayerId == G_Team2AttackingPlayer && Players[PlayerId].SpawnStatus==CSmPlayer::ESpawnStatus::NotSpawned){
 						declare UI <=> UIManager.GetUI(Players[PlayerId]);
 						if (UI != Null) {
 							UI.GaugeRatio = Pole.Gauge.ValueReal;
@@ -2135,6 +2248,7 @@ foreach (Pole in BlockPoles) {
 							G_LastPoleUI=Now;
 							
 						}
+						
 						Pole.Gauge.Speed = 1;
 					}
 				}
