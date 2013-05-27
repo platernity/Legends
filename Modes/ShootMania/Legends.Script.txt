@@ -7,7 +7,7 @@
 #Extends "Modes/ShootMania/ModeBase.Script.txt"
 
 #Const	CompatibleMapTypes	"LegendsArena"
-#Const	Version				"1.0"
+#Const	Version				"1.0(Beta)"
 
 
 
