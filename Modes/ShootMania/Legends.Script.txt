@@ -7,7 +7,7 @@
 #Extends "Modes/ShootMania/ModeBase.Script.txt"
 
 #Const	CompatibleMapTypes	"LegendsArena"
-#Const	Version				"1.0(Beta)"
+#Const	Version				"1.0"
 
 
 
@@ -747,7 +747,7 @@ Void UpdatePlayersList(
 			} else {
 				Quad_Attacker.Hide();
 			}
-		} else {
+		} else if(Frame_Player!=Null){
 			Frame_Player.Hide();
 		}
 	}
