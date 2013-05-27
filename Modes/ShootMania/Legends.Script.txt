@@ -281,6 +281,8 @@ Text CreatePlayersListBig(Integer _Mode, Real _Scale) {
 			PlayersByCol2 +=1;
 		}
 	}
+	if(PlayersByCol1>=5) PlayersByCol1=5;
+	if(PlayersByCol2>=5) PlayersByCol2=5;
 	declare S = _Scale;
 	declare K = 1;
 	declare AvatarSize = 10.75;
@@ -509,21 +511,28 @@ if(!G_FreeMode && Team1PlayerCount>=4) Team1PlayerCount=4;
 else if(Team1PlayerCount>=5) Team1PlayerCount=5;
 if(!G_FreeMode && Team2PlayerCount>=4) Team2PlayerCount=4;
 else if(Team2PlayerCount>=5) Team2PlayerCount=5;
+declare Integer biggestTeam;
+
+if(Team1PlayerCount>=Team2PlayerCount) biggestTeam=Team1PlayerCount;
+else biggestTeam=Team2PlayerCount;
 
 declare Integer Height;
-if(Team1PlayerCount>=Team2PlayerCount) Height = 30+20*Team1PlayerCount;
-else Height = 30+25*Team2PlayerCount;
+Height = 25*biggestTeam;
 if(Height<90) Height = 90;
 
 declare TeamTextPosition =((Height/90.)-1)*4.;
 declare BottomTextPosition=0;
-if(Team1PlayerCount<=3 && Team2PlayerCount<=3) BottomTextPosition = -32;
-if(Team1PlayerCount==4 || Team2PlayerCount==4) BottomTextPosition = -45;
-if(Team1PlayerCount==5 || Team2PlayerCount==5) BottomTextPosition = -56;
+if(biggestTeam<=3){ 
+BottomTextPosition = -32;
+}
+if(biggestTeam==4){ 
+BottomTextPosition = -45;
+}
+if(biggestTeam==5){ 
+BottomTextPosition = -56;
+}
 
-declare Integer biggestTeam;
-if(Team1PlayerCount>=Team2PlayerCount) biggestTeam=Team1PlayerCount;
-else biggestTeam=Team2PlayerCount;
+
 
 declare ManiaLink= """
 <quad posn="0 {{{-0.5*Height/90}}} -1" sizen="237 {{{Height}}}" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_bg.dds" />
@@ -1348,9 +1357,11 @@ Void DoWarmUp() {
 		SM::UnspawnPlayersChangingClan();
 		WarmUp::Loop();
 		XmlRpc::Loop();
+		
+		
+			
 		if (WarmUp::OrderHasChanged() || WarmUp::ReadyHasChanged()) {
 			G_MapOrder = WarmUp::GetOrder();
-			
 			LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequenceWarmUp);
 			UpdateLayerScoresTable(C_SequenceWarmUp);
 			
@@ -1573,6 +1584,8 @@ Text GetMarkersLayerManialink(CSmBlockPole Pole, Text Name) {
 
 //
 Void InitialMarkers(Integer Clan){
+
+log("InitPoleMarker");
 	foreach(Pole in BlockPoles){
 		if(Pole.Gauge.Clan == 2 ){
 			if(Clan == 0 || Clan == 1){
@@ -1732,18 +1745,17 @@ Void ResetPoleUIPlayer(CSmPlayer Player){
 //Create Attacker Marker
 Text CreateAttackerMarker(Integer Clan){
 
-
 declare ManiaLink = "";
 	if(Clan==1){
 	declare LayerAttached = Layers::Attach("PlayerMarkersTeam1", NullId);
-	declare LayerUpdated = Layers::Update("PlayerMarkersTeam1", """<frame id="AtkMarker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");
+	declare LayerUpdated = Layers::Update("PlayerMarkersTeam1", """<frame id="Atk1Marker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");
 	
-		ManiaLink ^="""<marker playerlogin="{{{TextLib::MLEncode(Players[G_Team1AttackingPlayer].Login)}}}" manialinkframeid="AtkMarker" box="0 1.85 0" />""";
+		ManiaLink ^="""<marker playerlogin="{{{TextLib::MLEncode(Players[G_Team1AttackingPlayer].Login)}}}" manialinkframeid="Atk1Marker" box="0 1.85 0" />""";
 	}else if(Clan == 2){
 	declare LayerAttached = Layers::Attach("PlayerMarkersTeam2", NullId);
-	declare LayerUpdated = Layers::Update("PlayerMarkersTeam2", """<frame id="AtkMarker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");
+	declare LayerUpdated = Layers::Update("PlayerMarkersTeam1", """<frame id="Atk1Marker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");
 	
-		ManiaLink ^="""<marker playerlogin="{{{TextLib::MLEncode(Players[G_Team2AttackingPlayer].Login)}}}" manialinkframeid="AtkMarker" box="0 1.85 0" />""";
+		ManiaLink ^="""<marker playerlogin="{{{TextLib::MLEncode(Players[G_Team2AttackingPlayer].Login)}}}" manialinkframeid="Atk2Marker" box="0 1.85 0" />""";
 	}
 	
 	log(ManiaLink);
@@ -1787,6 +1799,7 @@ declare LayerPlayerMarkersTeam2Id = Layers::Create("PlayerMarkersTeam2");
 Layers::GetFromId(LayerPlayerMarkersTeam1Id).Type = CUILayer::EUILayerType::Markers;
 Layers::GetFromId(LayerPlayerMarkersTeam2Id).Type = CUILayer::EUILayerType::Markers;
 
+//Scores
 LayerScores <=> UIManager.UILayerCreate();
 LayerScores.Type = CUILayer::EUILayerType::ScoresTable;
 //LayerScores.ManialinkPage = CreateLayerScoresTableElite();
@@ -2041,16 +2054,21 @@ G_LastBigMessage = Now;
 Void StartPlay() {
 	log("startRound "^G_RoundCounter);
 	InitRoundValues();
-	if(S_UseSimpleScore){
-		LayerScores.ManialinkPage = CreateLayerScoresTable();
-	}else{
-		LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequencePlaying);
-		UpdateLayerScoresTable(C_SequencePlaying);
-	}
 	
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	InitialMarkers(0);
+	/*
+	declare LayerDestroyed1 = Layers::Destroy("PlayerMarkersTeam1");
+	declare LayerDestroyed2 = Layers::Destroy("PlayerMarkersTeam2");
+	declare LayerPlayerMarkersTeam2Id = Layers::Create("PlayerMarkersTeam2");
+	Layers::GetFromId(LayerPlayerMarkersTeam2Id).Type = CUILayer::EUILayerType::Markers;
 	
+	declare LayerPlayerMarkersTeam1Id = Layers::Create("PlayerMarkersTeam1");
+	Layers::GetFromId(LayerPlayerMarkersTeam1Id).Type = CUILayer::EUILayerType::Markers;
+	declare Layer1Attached = Layers::Attach("PlayerMarkersTeam1", NullId);
+	declare Layer2Attached = Layers::Attach("PlayerMarkersTeam2", NullId);
+	declare Layer1Updated = Layers::Update("PlayerMarkersTeam1", """<frame id="Atk1Marker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");
+	declare Layer2Updated = Layers::Update("PlayerMarkersTeam2", """<frame id="Atk2Marker"><quad sizen="6 6" halign="center" valign="bottom" image="file://Media/Manialinks/ShootMania/Common/LaserWhite.dds" /></frame>""");*/
 	
 }
 //OnNewPlayer
@@ -2126,16 +2144,20 @@ Void UpdateUI(){
 	}
 	//AttackerMarker handle
 	if(G_AttackerMarkerTime[1]!=0 && Now >= G_AttackerMarkerTime[1]){
+		
 		declare LayerDetached = Layers::Detach("PlayerMarkersTeam1", NullId);
 		InitialMarkers(1);
+		//declare LayerDestroyed1 = Layers::Destroy("PlayerMarkersTeam1");
 		G_AttackerMarkerTime[1]=0;
 		G_Team1MarkerCreated=False;
 	}
 	if(G_AttackerMarkerTime[2]!=0 && Now >= G_AttackerMarkerTime[2]){
+		
 		declare LayerDetached = Layers::Detach("PlayerMarkersTeam2", NullId);
 		InitialMarkers(2);
-		G_AttackerMarkerTime[1]=0;
-		G_Team1MarkerCreated=False;
+		//declare LayerDestroyed2 = Layers::Destroy("PlayerMarkersTeam2");
+		G_AttackerMarkerTime[2]=0;
+		G_Team2MarkerCreated=False;
 	}
 }
 Void SpawnPlayers() {
@@ -2203,17 +2225,17 @@ foreach (Event in PendingEvents) {
 					if(Event.Shooter.Id == G_Team1AttackingPlayer){
 						if(Event.Victim.Id == G_Team2AttackingPlayer){
 							//Ping Victim
-							if(!G_Team1MarkerCreated){
+							log("Ping");
+							if(!G_Team2MarkerCreated){
 							foreach(PlayerId in G_Team1Players){
 								if(Players.existskey(PlayerId)){
 									declare UI <=> UIManager.GetUI(Players[PlayerId]);
 									if (UI != Null ) {
 										UI.Hud3dMarkers ^= CreateAttackerMarker(2);
-										
 									}
 								}
 							}
-							G_Team1MarkerCreated=True;
+							G_Team2MarkerCreated=True;
 							}
 							G_AttackerMarkerTime[2]=Now+S_AttackerPingTime*1000;
 							//declare LayerAttached = Layers::Attach("PlayerMarkersTeam2", NullId);
@@ -2227,19 +2249,19 @@ foreach (Event in PendingEvents) {
 					}else if(Event.Shooter.Id == G_Team2AttackingPlayer){
 						if(Event.Victim.Id == G_Team1AttackingPlayer){
 							//Ping Victim
+							log("Ping");
 							if(!G_Team1MarkerCreated){
 							foreach(PlayerId in G_Team2Players){
 								if(Players.existskey(PlayerId)){
 									declare UI <=> UIManager.GetUI(Players[PlayerId]);
 									if (UI != Null) {
 										UI.Hud3dMarkers ^= CreateAttackerMarker(1);
-										G_Team2MarkerCreated=True;
 									}
 								}
 							}
 							G_Team1MarkerCreated=True;
 							}
-							G_AttackerMarkerTime[2]=Now+S_AttackerPingTime*1000;
+							G_AttackerMarkerTime[1]=Now+S_AttackerPingTime*1000;
 							//declare LayerAttached = Layers::Attach("PlayerMarkersTeam1", NullId);
 							Event.ShooterPoints = 0;
 							Event.Damage=0;
@@ -2273,6 +2295,11 @@ foreach (Event in PendingEvents) {
 						if(Event.Shooter.CurrentClan ==2){
 							if(Event.Victim.Id == G_Team1AttackingPlayer){
 								Event.ShooterPoints = 1;
+								if (Event.Shooter.Score != Null) {
+									declare Integer DefendHits for Event.Shooter.Score = 0;
+									DefendHits += Event.ShooterPoints;
+									Event.Shooter.Score.Points += Event.ShooterPoints;
+								}
 								PassOn(Event);
 							}else{
 								//Def vs Def
@@ -2578,6 +2605,14 @@ Void AttributePoints() {
 		LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequencePlaying);
 		UpdateLayerScoresTable(C_SequencePodium);
 	}
+	if(G_AttackerMarkerTime[1]!=0){
+		//declare LayerDetached = Layers::Detach("PlayerMarkersTeam2", NullId);
+		//declare LayerDestroyed2 = Layers::Destroy("PlayerMarkersTeam2");
+	}
+	if(G_AttackerMarkerTime[2]!=0){
+		//declare LayerDetached = Layers::Detach("PlayerMarkersTeam2", NullId);
+		//declare LayerDestroyed2 = Layers::Destroy("PlayerMarkersTeam2");
+	}
 	EndTime=Now;
 	G_RoundCounter+=1;
 }
@@ -2585,8 +2620,8 @@ Void DisplayResults() {
 sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
 log("sleep");
 
-declare LayerDetached = Layers::Detach("PlayerMarkersTeam1", NullId);
-LayerDetached = Layers::Detach("PlayerMarkersTeam2", NullId);
+declare LayerDetached1 = Layers::Detach("PlayerMarkersTeam1", NullId);
+declare LayerDetached2 = Layers::Detach("PlayerMarkersTeam2", NullId);
 
 foreach(Player in Players){
 		if(Players.existskey(Player.Id)){
@@ -2631,8 +2666,8 @@ UpdateLayerScoresTable(C_SequencePodium);
 
 Void EndMap() {
 log("End Map");
-declare LayerDestroyed = Layers::Destroy("PlayerMarkersTeam1");
-LayerDestroyed = Layers::Destroy("PlayerMarkersTeam2");
+declare LayerDestroyed1 = Layers::Destroy("PlayerMarkersTeam1");
+declare LayerDestroyed2 = Layers::Destroy("PlayerMarkersTeam2");
 foreach (Score in Scores) {
 		declare Integer WonAttackRounds for Score;
 		WonAttackRounds = 0;
