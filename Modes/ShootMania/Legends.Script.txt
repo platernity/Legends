@@ -265,10 +265,19 @@ Text CreatePlayersListBig(Integer _Mode, Real _Scale) {
 	declare Col = 2.;
 	declare PlayersByCol1 = 0;
 	declare PlayersByCol2 = 0;
+	if(_Mode == C_SequenceWarmUp){
 	foreach(Player in Players){
 		if(Player.RequestedClan == 1){
 			PlayersByCol1 +=1;
 		}else if(Player.RequestedClan == 2){
+			PlayersByCol2 +=1;
+		}
+	}
+	}else{
+		foreach(PlayerId in G_Team1Players){
+			PlayersByCol1 +=1;
+		}
+		foreach(PlayerId in G_Team2Players){
 			PlayersByCol2 +=1;
 		}
 	}
@@ -481,7 +490,7 @@ declare ManiaLink = """<script><!--
  * 
  * @return		The manialink string
  */
-Text CreateLayerScoresTableElite() {
+Text CreateLayerScoresTableElite(Integer _Mode) {
 declare CW = 1.;
 declare SW = 1.;
 
@@ -496,6 +505,11 @@ foreach(Player in Players){
 		Team2PlayerCount+=1;
 	}
 }
+if(!G_FreeMode && Team1PlayerCount>=4) Team1PlayerCount=4;
+else if(Team1PlayerCount>=5) Team1PlayerCount=5;
+if(!G_FreeMode && Team2PlayerCount>=4) Team2PlayerCount=4;
+else if(Team2PlayerCount>=5) Team2PlayerCount=5;
+
 declare Integer Height;
 if(Team1PlayerCount>=Team2PlayerCount) Height = 30+20*Team1PlayerCount;
 else Height = 30+25*Team2PlayerCount;
@@ -507,6 +521,9 @@ if(Team1PlayerCount<=3 && Team2PlayerCount<=3) BottomTextPosition = -32;
 if(Team1PlayerCount==4 || Team2PlayerCount==4) BottomTextPosition = -45;
 if(Team1PlayerCount==5 || Team2PlayerCount==5) BottomTextPosition = -56;
 
+declare Integer biggestTeam;
+if(Team1PlayerCount>=Team2PlayerCount) biggestTeam=Team1PlayerCount;
+else biggestTeam=Team2PlayerCount;
 
 declare ManiaLink= """
 <quad posn="0 {{{-0.5*Height/90}}} -1" sizen="237 {{{Height}}}" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_bg.dds" />
@@ -528,7 +545,7 @@ declare ManiaLink= """
 		</frame>
 		<!-- **************** Players Ranking **************** -->
 		<frame posn="{{{-164*CW/2.}}} {{{0}}}" id="Frame_Ranking">
-			{{{CreatePlayersListBig(1, CW)}}}
+			{{{CreatePlayersListBig(_Mode, CW)}}}
 		</frame>
 	</frame>	
 	<!-- **************** Bottom panels **************** -->
@@ -572,7 +589,7 @@ Void UpdatePlayersList(
 	Integer[Integer]	_Fames,
 	Ident[Integer]		_PlayersIds
 ) {	
-	for (I, 1, {{{Players.count}}}) {
+	for (I, 1, {{{biggestTeam*2}}}) {
 		declare Frame_Player	<=> (Frame_Ranking.GetFirstChild("Frame_Player_"^I) as CMlFrame);
 
 		if (_Logins.existskey(I)) {
@@ -944,7 +961,7 @@ main() {
 			PrevUISequence = UI.UISequence;
 
 			if (UI.UISequence != CUIConfig::EUISequence::Playing) {
-				for (I, 1, {{{Players.count}}}) {
+				for (I, 1, {{{biggestTeam*2}}}) {
 					declare Frame_Player	<=> (Frame_Ranking.GetFirstChild("Frame_Player_"^I)	as CMlFrame);
 					declare Quad_Eliminated <=> (Frame_Player.GetFirstChild("Quad_Eliminated") as CMlQuad);
 					Quad_Eliminated.Hide();
@@ -984,6 +1001,7 @@ for (I, 1, 2) {
 	declare J = 1;
 	foreach (Id => Order in G_MapOrder[I]) {
 		if (Players.existskey(Id)) {
+			if(_Mode == C_SequencePlaying && !G_Team1Players.exists(Id) && !G_Team2Players.exists(Id)) continue;
 			declare Key = J+((I-1)*G_MapOrder[1].count);
 			//Key=Order;
 			declare Player <=> Players[Id];
@@ -1067,6 +1085,7 @@ foreach (Player in PlayersAndSpectators) {
 }
 // Spawn a Player
 Void SpawnThePlayer(CSmPlayer Player){
+	if(!G_Team1Players.exists(Player.Id) && !G_Team2Players.exists(Player.Id)) return;
 	declare CSmBlockSpawn Spawn;
 	foreach(BlockSpawn in BlockSpawns){
 		if(BlockSpawn.Base.Clan==Player.CurrentClan){
@@ -1133,6 +1152,7 @@ Void SpawnThemAll(Integer _Phase) {
 	if (_Phase == 2 || _Phase == 3) {
 		foreach (Player in Players) {
 			declare WarmUpSide for Player = True;
+			//if(!G_Team1Players.exists(Player.Id) || !G_Team2Players.exists(Player.Id)) continue;
 			if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) continue;
 
 			SetPlayerAmmoMax(Player, CSmMode::EWeapon::Rocket, 4);
@@ -1331,7 +1351,7 @@ Void DoWarmUp() {
 		if (WarmUp::OrderHasChanged() || WarmUp::ReadyHasChanged()) {
 			G_MapOrder = WarmUp::GetOrder();
 			
-			LayerScores.ManialinkPage = CreateLayerScoresTableElite();
+			LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequenceWarmUp);
 			UpdateLayerScoresTable(C_SequenceWarmUp);
 			
 		}
@@ -1931,14 +1951,18 @@ Void SetTeams() {
 	//G_PlayingPlayers.clear();
 	foreach(Player in Players){
 	if(Player.CurrentClan==1){
-		if(G_Team1Players.count<C_MaxPlayers/2){
+		if(G_Team1Players.count<C_MaxPlayers/2 && G_FreeMode){
 			G_Team1Players.add(Player.Id);
 			//G_PlayingPlayers.add(Player);
+		}else if(G_Team1Players.count<4){
+			G_Team1Players.add(Player.Id);
 		}
 	}else if(Player.CurrentClan==2){
-		if(G_Team2Players.count<C_MaxPlayers/2){
+		if(G_Team2Players.count<C_MaxPlayers/2 && G_FreeMode){
 			G_Team2Players.add(Player.Id);
 			//G_PlayingPlayers.add(Player);
+		}else if(G_Team2Players.count<4){
+			G_Team2Players.add(Player.Id);
 		}
 	}
 	
@@ -2020,7 +2044,7 @@ Void StartPlay() {
 	if(S_UseSimpleScore){
 		LayerScores.ManialinkPage = CreateLayerScoresTable();
 	}else{
-		LayerScores.ManialinkPage = CreateLayerScoresTableElite();
+		LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequencePlaying);
 		UpdateLayerScoresTable(C_SequencePlaying);
 	}
 	
@@ -2149,7 +2173,7 @@ foreach (Event in PendingEvents) {
 	if(S_UseSimpleScore){
 		LayerScores.ManialinkPage = CreateLayerScoresTable();
 	}else{
-		LayerScores.ManialinkPage = CreateLayerScoresTableElite();
+		LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequencePlaying);
 		UpdateLayerScoresTable(C_SequencePlaying);
 	}
 	switch (Event.Type) {
@@ -2551,7 +2575,7 @@ Void AttributePoints() {
 	if(S_UseSimpleScore){
 		LayerScores.ManialinkPage = CreateLayerScoresTable();
 	}else{
-		LayerScores.ManialinkPage = CreateLayerScoresTableElite();
+		LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequencePlaying);
 		UpdateLayerScoresTable(C_SequencePodium);
 	}
 	EndTime=Now;
