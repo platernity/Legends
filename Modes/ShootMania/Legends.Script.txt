@@ -99,7 +99,7 @@ declare Integer G_RedBots;
 //declare CSmPlayer[]	G_PlayingPlayers;			//All Playing players
 declare	Integer[Ident][Integer] G_MapOrder;		//Attack Order
 declare Integer[Integer] G_InitDefHit;			///< Default values for the defenders hit
-declare Integer[Ident] G_AttackPoints;
+//declare Integer[Ident] G_AttackPoints;
 
 
 //Scores
@@ -148,6 +148,7 @@ InitGameSettings();
 
 ***StartMap***
 ***
+UIManager.UIAll.SendChat("$fffMap is loaded");
 Mode::Ladder_OpenMatch_All();
 InitUI();
 InitLayers();
@@ -495,33 +496,43 @@ foreach(Player in Players){
 		Team2PlayerCount+=1;
 	}
 }
-declare Height = 130;
+declare Integer Height;
+if(Team1PlayerCount>=Team2PlayerCount) Height = 30+20*Team1PlayerCount;
+else Height = 30+25*Team2PlayerCount;
+if(Height<90) Height = 90;
+
+declare TeamTextPosition =((Height/90.)-1)*4.;
+declare BottomTextPosition=0;
+if(Team1PlayerCount<=3 && Team2PlayerCount<=3) BottomTextPosition = -32;
+if(Team1PlayerCount==4 || Team2PlayerCount==4) BottomTextPosition = -45;
+if(Team1PlayerCount==5 || Team2PlayerCount==5) BottomTextPosition = -56;
+
 
 declare ManiaLink= """
-<quad posn="0 -0.5 -1" sizen="237 {{{Height}}}" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_bg.dds" />
-<quad posn="-73.2 11 6" sizen="29 77" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_left.dds" colorize="{{{Team1Color}}}" />
-<quad posn=" 73.2 11 6" sizen="29 77" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_right.dds" colorize="{{{Team2Color}}}" />
+<quad posn="0 {{{-0.5*Height/90}}} -1" sizen="237 {{{Height}}}" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_bg.dds" />
+<quad posn="-73.2 {{{11*Height/90}}} 6" sizen="29 {{{44.3*Height*1.1/(96)}}}" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_left.dds" colorize="{{{Team1Color}}}" />
+<quad posn=" 73.2 {{{11*Height/90}}} 6" sizen="29 {{{44.3*Height*1.1/(96)}}}" halign="center" valign="center" image="file://Media/Manialinks/ShootMania/Elite/interface_elite_right.dds" colorize="{{{Team2Color}}}" />
 
-<!--<quad posn="-150 90" sizen="{{{50*CW}}} 20" halign="left" valign="top" style="TitleLogos" substyle="Title"/>-->
+<!--<quad posn="-150 {{{Height}}}" sizen="{{{50*CW}}} 20" halign="left" valign="top" style="TitleLogos" substyle="Title"/>-->
 
 <!-- **************** Scores table **************** -->
-<frame posn="0 34" id ="Frame_ScoresTable">
+<frame posn="0 {{{34*Height/140}}}" id ="Frame_ScoresTable">
 	<!-- **************** Center panel **************** -->
 	<frame posn="0 0">		
 		<!-- **************** VS **************** -->
 		<frame posn="0 0" id="Frame_VS">
-			<quad posn="-7 -2.5" sizen="15 15" halign="right" valign="bottom" style="Emblems" substyle="#1" />
-			<quad posn="7 -2.5" sizen="15 15" valign="bottom" style="Emblems" substyle="#2" />
-			<label posn="-46 1.5" sizen="46 5" textsize="4" halign="center" valign="bottom" scale="0.95" opacity="0.88" textemboss="1" id="Label_NameTeam1" />
-			<label posn=" 46 1.5" sizen="46 5" textsize="4" halign="center" valign="bottom" scale="0.95" opacity="0.88" textemboss="1" id="Label_NameTeam2" />
+			<quad posn="-7 -2.5" sizen="{{{15*Height/90}}} {{{15*Height/90}}}" halign="right" valign="bottom" style="Emblems" substyle="#1" />
+			<quad posn="7 -2.5" sizen="{{{15*Height/90}}} {{{15*Height/90}}}" valign="bottom" style="Emblems" substyle="#2" />
+			<label posn="-46 {{{2.5+TeamTextPosition}}}" sizen="46 5" textsize="4" halign="center" valign="bottom" scale="0.95" opacity="0.88" textemboss="1" id="Label_NameTeam1" />
+			<label posn=" 46 {{{2.5+TeamTextPosition}}}" sizen="46 5" textsize="4" halign="center" valign="bottom" scale="0.95" opacity="0.88" textemboss="1" id="Label_NameTeam2" />
 		</frame>
 		<!-- **************** Players Ranking **************** -->
-		<frame posn="{{{-164*CW/2.}}} -16" id="Frame_Ranking">
+		<frame posn="{{{-164*CW/2.}}} {{{0}}}" id="Frame_Ranking">
 			{{{CreatePlayersListBig(1, CW)}}}
 		</frame>
 	</frame>	
 	<!-- **************** Bottom panels **************** -->
-	<frame posn="{{{-164*CW/2.}}} -47">
+	<frame posn="{{{-164*CW/2.}}} {{{BottomTextPosition}}}">
 		<!-- **************** Laser stats **************** -->
 		<quad posn="{{{1*SW}}} -8.2" sizen="4 4" halign="left" valign="center" image="file://Media/Manialinks/ShootMania/Common/Laser.dds" />
 		<label posn="{{{6*SW}}} -8" sizen="{{{75*SW}}} 6" textsize="2" textcolor="{{{C_UI_Colors["Text"]}}}" valign="center" textemboss="1" text="{{{TextLib::Compose(_("Longest Laser: %1 by %2"), "-", "-")}}}" id="Label_LongestLaser" />
@@ -980,16 +991,18 @@ for (I, 1, 2) {
 			if (Id == G_Team1AttackingPlayer) Attacker1Key = Key;
 			if (Id == G_Team2AttackingPlayer) Attacker2Key = Key;
 			if (Player.Score != Null) {
-				declare Integer NbHit for Player.Score;
+				//declare Integer NbHit for Player.Score;
 				declare Real LaserLongest for Player.Score =0.;
-				declare Integer LaserHit for Player.Score =0;
-				declare Integer LaserShot for Player.Score =0;
-				declare Integer AttackWin for Player.Score =0;//Searchme
+				//declare Integer LaserHit for Player.Score =0;
+				//declare Integer LaserShot for Player.Score =0;
+				declare Integer WonAttackRounds for Player.Score =0;//Searchme
 				//G_InitDefHit = [1 => 0, 2 => 0, 3 => 0];
 				//declare DefHit for Player.Score = G_InitDefHit;
 				
-				AtkPoints[Key] = 0;
+				AtkPoints[Key] = WonAttackRounds;
+				/*
 				if(G_AttackPoints.existskey(Id)) AtkPoints[Key] = G_AttackPoints[Id];
+				*/
 				foreach(Score in Scores){
 					if(Score==Player.Score){
 						DefPoints[Key]=Score.Points;
@@ -997,8 +1010,8 @@ for (I, 1, 2) {
 				}
 				if(Scores.existskey(Id)) DefPoints[Key] = Scores[Id].Points;
 				LasersLongest[Key] = LaserLongest;
-				LasersHit[Key] = LaserHit;
-				LasersShot[Key] = LaserShot;
+				//LasersHit[Key] = LaserHit;
+				//LasersShot[Key] = LaserShot;
 				//DetailedDefPoints[Key] = DefHit;
 			}
 			
@@ -1566,12 +1579,16 @@ Void InitialMarkers(Integer Clan){
 Void IncreaseAtkPoints(Ident _Id, Integer _Points) {
 log(_Id^" won "^_Points);
 	if (Players.existskey(_Id) && Players[_Id].Score != Null) {
+	declare Integer WonAttackRounds for Players[_Id].Score;
+	WonAttackRounds = WonAttackRounds + _Points;
+	/*
 		if(_Points >=0){
 			if(G_AttackPoints.existskey(_Id)) G_AttackPoints[_Id]+=_Points;
 			else G_AttackPoints[_Id]=_Points;
 		}else{
 			Players[_Id].Score.Points -= -1*_Points;
 		}
+		*/
 	}
 }
 /*
@@ -1747,7 +1764,6 @@ declare LayerPlayerMarkersTeam1Id = Layers::Create("PlayerMarkersTeam1");
 
 declare LayerPlayerMarkersTeam2Id = Layers::Create("PlayerMarkersTeam2");
 
-sleep(1000);
 Layers::GetFromId(LayerPlayerMarkersTeam1Id).Type = CUILayer::EUILayerType::Markers;
 Layers::GetFromId(LayerPlayerMarkersTeam2Id).Type = CUILayer::EUILayerType::Markers;
 
@@ -1787,7 +1803,7 @@ UseAmmoBonusOnHit = S_UseAmmoBonusOnHit;
 G_RoundScores = [1 => 0, 2 => 0];
 G_RestartNeeded=False;
 G_FreeMode = S_FreeMode;
-G_AttackPoints.clear();
+//G_AttackPoints.clear();
 G_LongestLaserDist = 0.;
 G_LongestLaserName = "";
 }
@@ -2528,6 +2544,10 @@ Void AttributePoints() {
 	Score::RoundEnd();
 	Victory::RoundEnd();
 	SM::UnspawnAllPlayers();
+	foreach (Player in Players) {
+	if (Player.Score == Null) continue;
+		Player.Score.LadderClan = Player.CurrentClan;
+	}
 	if(S_UseSimpleScore){
 		LayerScores.ManialinkPage = CreateLayerScoresTable();
 	}else{
@@ -2554,8 +2574,10 @@ sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
 }
 Void GiveLadderPoints(Integer WinnerClan){
 	// Give Ladder Points
+	UpdateLayerScoresTable(C_SequencePodium);
 foreach (Score in Scores) {
 	declare PrevPoints for Score = 0;
+	declare WonAttackRounds for Score = 0;
 	PrevPoints = Score.Points;
 	Score.LadderMatchScoreValue = (Score.Points * 1.);
 	// Winner
@@ -2582,11 +2604,11 @@ foreach (Score in Scores) {
 }
 UpdateLayerScoresTable(C_SequencePodium);
 }
+
 Void EndMap() {
 log("End Map");
-
-
-
+declare LayerDestroyed = Layers::Destroy("PlayerMarkersTeam1");
+LayerDestroyed = Layers::Destroy("PlayerMarkersTeam2");
 foreach (Score in Scores) {
 		declare Integer WonAttackRounds for Score;
 		WonAttackRounds = 0;
@@ -2622,6 +2644,7 @@ if(G_MapScores[1]>=S_MapsToWin){
 	G_LastBigMessage=Now;
 	GiveLadderPoints(2);
 }
+UpdateLayerScoresTable(C_SequencePodium);
 sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000));
 MB_StopMap = True;
 
@@ -2662,7 +2685,7 @@ if(G_RoundScores[1]>=S_PointLimitToWin || G_RoundScores[2]>=S_PointLimitToWin){
 	}
 	}
 }
-//EndMap
+//EndMatch
 Void EndMapUI() {
 	Score::MatchEnd();
 	Victory::MatchEnd();
