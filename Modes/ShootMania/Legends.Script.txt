@@ -292,7 +292,7 @@ Text CreatePlayersListBig(Integer _Mode, Real _Scale) {
 <framemodel posn="0 0" id="Frame_PlayerLeft">
 	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" image="file://Media/Manialinks/ShootMania/Elite/NotReady.dds" id="Quad_NotReady" />
 	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" image="file://Media/Manialinks/ShootMania/Elite/Ready.dds" hidden="1" id="Quad_Ready" />
-	<quad posn="{{{0*S}}} 0 1" sizen="{{{81.8*S}}} 11.5" bgcolor="a007" id="Quad_Attacker" hidden="1" />
+	<quad posn="{{{0*S}}} 0 1" sizen="{{{81.8*S}}} 11.5" bgcolor="a007" id="Quad_Attacker1" hidden="1" />
 	<quad posn="{{{0*S}}} 0 5" sizen="{{{81.8*S}}} 11.5" bgcolor="0009" id="Quad_Eliminated" hidden="1" />
 	<quad posn="{{{(3*S)+6}}} {{{11.5/-2.}}} 2" sizen="{{{AvatarSize}}} {{{AvatarSize}}}" halign="center" valign="center" bgcolor="0003" opacity="0.9" id="Quad_Avatar" />
 	<label posn="{{{17*S}}} -6.4 3" sizen="{{{45*S}}} 12" textsize="3" valign="bottom" id="Label_Name" />
@@ -325,7 +325,7 @@ Text CreatePlayersListBig(Integer _Mode, Real _Scale) {
 <framemodel posn="0 0" id="Frame_PlayerRight">
 	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" halign="right" image="file://Media/Manialinks/ShootMania/Elite/NotReady.dds" id="Quad_NotReady" />
 	<quad posn="0 0 2" sizen="{{{3*S}}} 11.5" halign="right" image="file://Media/Manialinks/ShootMania/Elite/Ready.dds" hidden="1" id="Quad_Ready" />
-	<quad posn="{{{0*S}}} 0 1" sizen="{{{81.8*S}}} 11.5" bgcolor="a007" halign="right" id="Quad_Attacker" hidden="1" />
+	<quad posn="{{{0*S}}} 0 1" sizen="{{{81.8*S}}} 11.5" bgcolor="a007" halign="right" id="Quad_Attacker2" hidden="1" />
 	<quad posn="{{{0*S}}} 0 5" sizen="{{{81.8*S}}} 11.5" bgcolor="0009" halign="right" id="Quad_Eliminated" hidden="1" />
 	<quad posn="{{{(-3*S)-6}}} {{{11.5/-2.}}} 2" sizen="{{{AvatarSize}}} {{{AvatarSize}}}" halign="center" valign="center" bgcolor="0003" opacity="0.9" id="Quad_Avatar" />
 	<label posn="{{{-17*S}}} -6.4 3" sizen="{{{45*S}}} 12" textsize="3" halign="right" valign="bottom" id="Label_Name" />
@@ -583,7 +583,8 @@ declare CMlLabel	Label_GameInfo;
 declare CMlLabel	Label_GoalAverage;
 
 Void UpdatePlayersList(
-	Integer				_AttackerKey, 
+	Integer				_Attacker1Key, 
+	Integer				_Attacker2Key,
 	Text[Integer]		_Logins, 
 	Text[Integer]		_Names, 
 	Text[Integer]		_Zones,
@@ -610,7 +611,8 @@ Void UpdatePlayersList(
 			declare Frame_Stars				<=> (Frame_Player.GetFirstChild("Frame_Stars")				as CMlFrame);
 			declare Label_DefPoints			<=> (Frame_Player.GetFirstChild("Label_DefPoints")			as CMlLabel);
 			declare Label_AtkPoints			<=> (Frame_Player.GetFirstChild("Label_AtkPoints")			as CMlLabel);
-			declare Quad_Attacker			<=> (Frame_Player.GetFirstChild("Quad_Attacker")			as CMlQuad);
+			declare Quad_Attacker1			<=> (Frame_Player.GetFirstChild("Quad_Attacker1")			as CMlQuad);
+			declare Quad_Attacker2			<=> (Frame_Player.GetFirstChild("Quad_Attacker2")			as CMlQuad);
 			declare Frame_LadderPoints		<=> (Frame_Player.GetFirstChild("Frame_LadderPoints")		as CMlFrame);
 			declare Label_LadderPoints		<=> (Frame_Player.GetFirstChild("Label_LadderPoints")		as CMlLabel);
 			declare Frame_DefPointsSimple	<=> (Frame_Player.GetFirstChild("Frame_DefPointsSimple")	as CMlFrame);
@@ -748,13 +750,19 @@ Void UpdatePlayersList(
 				Label_AtkPoints.SetText("$s"^_AtkPoints[I]);
 			} else {
 				Label_AtkPoints.SetText("$s0");
-			}
-			// Attacker
-			if (I == _AttackerKey && _Mode == {{{C_SequencePlaying}}}) {
-				Quad_Attacker.Show();
+			}/*
+			// Attacker1
+			if (I == _Attacker1Key && _Mode == {{{C_SequencePlaying}}}) {
+				Quad_Attacker1.Show();
 			} else {
-				Quad_Attacker.Hide();
+				Quad_Attacker1.Hide();
 			}
+			// Attacker2
+			if (I == _Attacker2Key && _Mode == {{{C_SequencePlaying}}}) {
+				Quad_Attacker2.Show();
+			} else {
+				Quad_Attacker2.Hide();
+			}*/
 		} else if(Frame_Player!=Null){
 			Frame_Player.Hide();
 		}
@@ -856,7 +864,8 @@ main() {
 	
 
 	declare netread Integer				Net_LayerST_Update			for UI;
-	declare netread Integer				Net_LayerST_AttackerKey		for UI;
+	declare netread Integer				Net_LayerST_Attacker1Key	for UI;
+	declare netread Integer				Net_LayerST_Attacker2Key	for UI;
 	declare netread Text[Integer]		Net_LayerST_Logins			for UI;
 	declare netread Integer[Integer]	Net_LayerST_AtkPoints		for UI;
 	declare netread Integer[Integer]	Net_LayerST_DefPoints		for UI;
@@ -875,7 +884,8 @@ main() {
 	declare Text[Integer]		Names;
 	declare Integer[Integer]	LadderRanks;
 	declare Text[Integer]		Zones;
-	declare Integer				Order;
+	declare Integer				Order1;
+	declare Integer				Order2;
 	declare Real[Integer]		LadderPoints;
 	declare Integer[Integer]	Fames;
 	declare Ident[Integer]		PlayersIds;
@@ -907,9 +917,13 @@ main() {
 
 			Logins = Net_LayerST_Logins;
 
-			if (Net_LayerST_AttackerKey <= 0) Order = -1;
-			else if (Net_LayerST_AttackerKey <= 3) Order = Net_LayerST_AttackerKey;
-			else Order = Net_LayerST_AttackerKey - 3;
+			if (Net_LayerST_Attacker1Key <= 0) Order1 = -1;
+			else if (Net_LayerST_Attacker1Key <= 5) Order1 = Net_LayerST_Attacker1Key;
+			else Order1 = -1;
+			
+			if (Net_LayerST_Attacker2Key <= 0) Order2 = -1;
+			else if (Net_LayerST_Attacker1Key <= 3) Order2 = Net_LayerST_Attacker2Key;
+			else Order2 = -1;
 
 			Names.clear();
 			LadderRanks.clear();
@@ -937,7 +951,8 @@ main() {
 			}*/
 
 			UpdatePlayersList(
-				Net_LayerST_AttackerKey, 
+				Net_LayerST_Attacker1Key,
+				Net_LayerST_Attacker2Key,
 				Logins, 
 				Names, 
 				Zones,
@@ -1592,20 +1607,20 @@ log("InitPoleMarker");
 		if(Pole.Gauge.Clan == 2 ){
 			if(Clan == 0 || Clan == 1){
 			foreach(PlayerId in G_Team1DefenderPlayers){
-				UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
+				if(Players.existskey(PlayerId)) UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
 				}
 			}
 			if(Clan == 0 || Clan == 2){
-				UIManager.GetUI(Players[G_Team2AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
+				if(Players.existskey(G_Team2AttackingPlayer)) UIManager.GetUI(Players[G_Team2AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
 			}
 		}else if(Pole.Gauge.Clan == 1){
 			if(Clan == 0 || Clan == 2){
 			foreach(PlayerId in G_Team2DefenderPlayers){
-				UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
+				if(Players.existskey(PlayerId)) UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
 			}
 			}
 			if(Clan == 0 || Clan == 1){
-			UIManager.GetUI(Players[G_Team1AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
+				if(Players.existskey(G_Team1AttackingPlayer)) UIManager.GetUI(Players[G_Team1AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
 			}
 		}
 	}
@@ -2086,6 +2101,8 @@ Void StartPlay() {
 				UI.Hud3dMarkers ^= CreateAttackerMarker(1);
 				declare netwrite Boolean Net_LayerST_Team1IsHidden for UI;
 				Net_LayerST_Team1IsHidden = True;
+				declare netwrite Boolean Net_LayerST_Team2IsHidden for UI;
+				Net_LayerST_Team2IsHidden = True;
 			}
 		}
 		else if(G_Team1Players.exists(Player.Id)){
@@ -2094,6 +2111,8 @@ Void StartPlay() {
 				UI.Hud3dMarkers ^= CreateAttackerMarker(2);
 				declare netwrite Boolean Net_LayerST_Team2IsHidden for UI;
 				Net_LayerST_Team2IsHidden = True;
+				declare netwrite Boolean Net_LayerST_Team1IsHidden for UI;
+				Net_LayerST_Team1IsHidden = True;
 			}
 		}
 	}
@@ -2175,10 +2194,12 @@ Void UpdateUI(){
 		log("RemoveLayerAtk1");
 		//declare LayerDetached = Layers::Detach("PlayerMarkersTeam1", NullId);
 		foreach(PlayerId in G_Team2Players){
+			if(Players.existskey(PlayerId)){
 			declare UI <=> UIManager.GetUI(Players[PlayerId]);
 			if (UI != Null) {
 				declare netwrite Boolean Net_LayerST_Team1IsHidden for UI;
 				Net_LayerST_Team1IsHidden = True;
+			}
 			}
 		}
 		G_Team1MarkerCreated=False;
@@ -2188,11 +2209,13 @@ Void UpdateUI(){
 		log("RemoveLayerAtk2");
 		//declare LayerDetached = Layers::Detach("PlayerMarkersTeam2", NullId);
 		foreach(PlayerId in G_Team1Players){
+		if(Players.existskey(PlayerId)){
 			declare UI <=> UIManager.GetUI(Players[PlayerId]);
 			if (UI != Null) {
 				declare netwrite Boolean Net_LayerST_Team2IsHidden for UI;
 				Net_LayerST_Team2IsHidden = True;
 			}
+		}
 		}
 		G_Team2MarkerCreated=False;
 		G_AttackerMarkerTime[2]=0;
@@ -2420,7 +2443,7 @@ foreach (Pole in BlockPoles) {
 		//if((!G_Team1WonAttack && Pole.Gauge.Clan == 1) || (!G_Team2WonAttack && Pole.Gauge.Clan == 2)){
 			if(Pole.Sector.PlayersIds.count > 0){
 				foreach(PlayerId in Pole.Sector.PlayersIds){
-			
+					if(!Players.existskey(PlayerId)) continue;
 					if(Pole.Gauge.Clan == 1 && PlayerId == G_Team1AttackingPlayer && Players[PlayerId].SpawnStatus==CSmPlayer::ESpawnStatus::Spawned){
 						declare UI <=> UIManager.GetUI(Players[PlayerId]);
 						if (UI != Null) {
@@ -2461,7 +2484,7 @@ Void RespawnDefender() {
 	foreach(PlayerId => Time in G_DefenderTeam1TimeToBeRespawned){
 	
 		if(Time != 0 && Now >= Time){
-			SpawnThePlayer(Players[PlayerId]);
+			if(Players.existskey(PlayerId)) SpawnThePlayer(Players[PlayerId]);
 			G_DefenderTeam1TimeToBeRespawned[PlayerId] = 0;
 			
 		}
@@ -2469,7 +2492,7 @@ Void RespawnDefender() {
 	foreach(PlayerId => Time in G_DefenderTeam2TimeToBeRespawned){
 	
 		if(Time != 0 && Now >= Time){
-			SpawnThePlayer(Players[PlayerId]);
+			if(Players.existskey(PlayerId)) SpawnThePlayer(Players[PlayerId]);
 			G_DefenderTeam2TimeToBeRespawned[PlayerId] = 0;
 			
 		}
