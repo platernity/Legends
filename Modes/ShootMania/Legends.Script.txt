@@ -2340,10 +2340,9 @@ foreach (Event in PendingEvents) {
 							G_AttackerMarkerTime[2]=Now+S_AttackerPingTime*1000;
 							//declare LayerAttached = Layers::Attach("PlayerMarkersTeam2", NullId);
 							Event.ShooterPoints = 0;
-							Event.Damage= 100;
-							declare armor = Event.Victim.Armor;
+							Event.Damage=0;
 							PassOn(Event);
-							Event.Victim.Armor = Event.Victim.Armor+1;
+							
 						}else{
 							PassOn(Event);
 						}
@@ -2372,11 +2371,11 @@ foreach (Event in PendingEvents) {
 								G_Team1MarkerCreated=True;
 							}
 							G_AttackerMarkerTime[1]=Now+S_AttackerPingTime*1000;
-							
+							Event.Damage=0;
 							Event.ShooterPoints = 0;
-							Event.Damage=100;
 							PassOn(Event);
-							Event.Victim.Armor = Event.Victim.Armor+1;
+								
+							
 						}else{
 							PassOn(Event);
 						}
@@ -2429,17 +2428,14 @@ foreach (Event in PendingEvents) {
 				}
 			}
 		case CSmModeEvent::EType::OnArmorEmpty: {
-			if(Event.Shooter.Id == G_Team1AttackingPlayer && Event.Victim.Id == G_Team2AttackingPlayer){ Discard(Event);}
-			else if(Event.Shooter.Id == G_Team2AttackingPlayer && Event.Victim.Id == G_Team1AttackingPlayer){ Discard(Event);}
-			else
-			{
 				DisplayHitDistance(Event.Shooter, Event.Victim, False);
 				declare LaserLongest for Event.Shooter.Score = 0.;
 				declare Distance = MathLib::Distance(Event.Shooter.Position, Event.Victim.Position);
 				if (Distance > LaserLongest) LaserLongest = Distance;
-					}
+					
+				log("passon");
 				PassOn(Event);
-			}
+				}
 		case CSmModeEvent::EType::OnCapture: {
 				if(Event.BlockPole.Gauge.Clan == 1){
 					if(!G_Pole1Captured){
