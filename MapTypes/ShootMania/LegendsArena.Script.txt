@@ -106,7 +106,7 @@ Text EditSpawnAnchorManialink(Ident _EditedAnchorDataId) {
 		<quad posn="0 0 2" sizen="72 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
 		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" text="$fffRules"/>
 		
-		<quad posn="0 0 -1" sizen="68 21" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<quad posn="0 0 -1" sizen="68 25" halign="center" style="Bgs1" substyle="BgWindow2"/>
 		<frame posn="-30 -3">
 			<label posn="0 0" sizen="60 5" autonewline="1" style="TextCardSmallScores2" text="$333{{{Rules}}}"/>
 		</frame>
@@ -178,7 +178,7 @@ Text EditGoalAnchorManialink(Ident _EditedAnchorDataId) {
 		<quad posn="0 0 2" sizen="72 15" halign="center" valign="bottom" style="Bgs1InRace" substyle="BgTitle3_5"/>
 		<label posn="0 5 3" halign="center" valign="bottom" style="TextTitle3" text="$fffRules"/>
 		
-		<quad posn="0 0 -1" sizen="68 21" halign="center" style="Bgs1" substyle="BgWindow2"/>
+		<quad posn="0 0 -1" sizen="68 25" halign="center" style="Bgs1" substyle="BgWindow2"/>
 		<frame posn="-30 -3">
 			<label posn="0 0" sizen="60 5" autonewline="1" style="TextCardSmallScores2" text="$333{{{Rules}}}"/>
 		</frame>
