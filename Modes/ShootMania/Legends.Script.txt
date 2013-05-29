@@ -600,7 +600,7 @@ Void UpdatePlayersList(
 	Integer[Integer]	_Fames,
 	Ident[Integer]		_PlayersIds
 ) {	
-	for (I, 1, {{{biggestTeam*2}}}) {
+	for (I, 1, Frame_Ranking.Controls.count) {
 		declare Frame_Player	<=> (Frame_Ranking.GetFirstChild("Frame_Player_"^I) as CMlFrame);
 
 		if (_Logins.existskey(I)) {
@@ -1041,7 +1041,7 @@ for (I, 1, 2) {
 				declare Real LaserLongest for Player.Score =0.;
 				//declare Integer LaserHit for Player.Score =0;
 				//declare Integer LaserShot for Player.Score =0;
-				declare Integer WonAttackRounds for Player.Score =0;//Searchme
+				declare Integer WonAttackRounds for Player.Score;//Searchme
 				//G_InitDefHit = [1 => 0, 2 => 0, 3 => 0];
 				//declare DefHit for Player.Score = G_InitDefHit;
 				
@@ -1794,6 +1794,8 @@ G_MapScores	= [1 => 0, 2 => 0];
 G_RoundScores = [1 => 0, 2 => 0];
 UpdateHeader();
 
+
+
 }
 //StartMap
 Void InitUI() {
@@ -1801,20 +1803,18 @@ UIManager.UIAll.BigMessage = "";
 G_LastBigMessage=0;
 G_LastStatusMessage=0;
 UIManager.UIAll.StatusMessage = "";
-
-
 }
 Void InitLayers() {
 // Layers
 
-
+UIManager.UIAll.UILayers.add(LayerScores);
+UIManager.UIAll.ScoreTableOnlyManialink = True;
 
 //Scores
 
 //LayerScores.ManialinkPage = CreateLayerScoresTableElite();
 //LayerScores.ManialinkPage = CreateLayerScoresTable();
-UIManager.UIAll.UILayers.add(LayerScores);
-UIManager.UIAll.ScoreTableOnlyManialink = True;
+
 
 // Teams layer
 LayerTeams <=> UIManager.UILayerCreate();
@@ -1852,6 +1852,12 @@ G_LongestLaserName = "";
 Void PrepareMatch() {
 Score::MatchBegin();
 Victory::MatchBegin();
+foreach (Score in Scores) {
+		declare Integer WonAttackRounds for Score;
+		WonAttackRounds = 0;
+		declare Integer DefendHits for Score;
+		DefendHits = 0;
+	}
 
 }
 Void InitBases() {
@@ -1937,12 +1943,7 @@ Void InitRoundValues(){
 	G_Team1WonAttack = False;
 	G_Team2WonAttack = False;
 	G_Playing= False;
-	foreach (Score in Scores) {
-		declare Integer WonAttackRounds for Score;
-		WonAttackRounds = 0;
-		declare Integer DefendHits for Score;
-		DefendHits = 0;
-	}
+	
 
 	G_AttackerMarkerTime[1]=0;
 	G_AttackerMarkerTime[2]=0;
@@ -1951,7 +1952,8 @@ Void PrepareRound() {
 	SM::UnspawnAllPlayers();
 	Score::RoundBegin();
 	Victory::RoundBegin();
-	
+	LayerScores.ManialinkPage = CreateLayerScoresTableElite(C_SequencePlaying);
+	UpdateLayerScoresTable(C_SequencePlaying);
 }
 
 Void CheckWarmup() {
