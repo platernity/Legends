@@ -65,7 +65,6 @@
 #Const	C_StatusMessageTime			2500		// Time StatusMessage stay
 #Const	C_PoleUITime				1000		// Time PoleUI stay
 
-
 #Const	C_UI_Colors [
 	"BG"		=> "fffa",
 	"Separator"	=> "eeef",
@@ -140,6 +139,7 @@ declare Boolean G_UseLaserVsBullets;
 *****************************************************/
 ***StartServer***
 ***
+
 WarmUp::ResetOrder();
 MB_UseSectionRound = True;
 InitGameSettings();
@@ -1114,10 +1114,10 @@ foreach (Player in PlayersAndSpectators) {
 // Spawn a Player
 Void SpawnThePlayer(CSmPlayer Player){
 	if(!G_Team1Players.exists(Player.Id) && !G_Team2Players.exists(Player.Id)) return;
-	declare CSmBlockSpawn Spawn;
-	foreach(BlockSpawn in BlockSpawns){
+	declare SpawnId = NullId;
+	foreach(BlockSpawn in MapLandmarks_PlayerSpawn){
 		if(BlockSpawn.Base.Clan==Player.CurrentClan){
-			Spawn = BlockSpawn;
+			SpawnId = /*(CSmBlockSpawn)*/BlockSpawn.Id;
 		}
 	}
 	
@@ -1139,7 +1139,7 @@ Void SpawnThePlayer(CSmPlayer Player){
 			UI.SpectatorForcedClan = Player.CurrentClan;
 		}
 		
-		SM::SpawnPlayer(Player, Player.CurrentClan, Spawn, StartTime);
+		SM::SpawnPlayer(Player, Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, StartTime);
 		//SpawnPlayer(Player, Player.CurrentClan, Player.ArmorMax, Spawn, StartTime);
 		return;
 	}else{
@@ -1154,7 +1154,7 @@ Void SpawnThePlayer(CSmPlayer Player){
 			UI.SpectatorForcedClan = Player.CurrentClan;
 		}
 		
-		SM::SpawnPlayer(Player, Player.CurrentClan, Spawn, StartTime);
+		SM::SpawnPlayer(Player, Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, StartTime);
 		//SpawnPlayer(Player, Player.CurrentClan, Player.ArmorMax, Spawn, StartTime);
 		return;
 	}
@@ -1165,13 +1165,13 @@ Void SpawnThePlayer(CSmPlayer Player){
  */
 Void SpawnThemAll(Integer _Phase) {
 	// Get spawns
-	declare CSmBlockSpawn BlockSpawn1;
-	declare CSmBlockSpawn BlockSpawn2;
-	foreach (Spawn in BlockSpawns) {
+	declare SpawnId1 = NullId;
+	declare SpawnId2 = NullId;
+	foreach (Spawn in MapLandmarks_PlayerSpawn) {
 		if(Spawn.Order==1){
-			BlockSpawn1 = Spawn;
+			SpawnId1 = Spawn.Id;
 		}else if(Spawn.Order==2){
-			BlockSpawn2 = Spawn;
+			SpawnId2 = Spawn.Id;
 		}
 	}
 	
@@ -1196,7 +1196,7 @@ Void SpawnThemAll(Integer _Phase) {
 				Player.ArmorMax = 200;
 				Player.Armor = Player.ArmorMax;
 				SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
-				SM::SpawnPlayer(Player, Player.RequestedClan, BlockSpawn1, Now);
+				SM::SpawnPlayer(Player, Player.RequestedClan, MapLandmarks_PlayerSpawn[SpawnId1].PlayerSpawn, Now);
 			} else {
 				Player.AmmoGain	= 1. * C_DefenderAmmoGain;
 				Player.StaminaMax = 1. * C_DefStaminaMaxMultiplier;
@@ -1204,7 +1204,7 @@ Void SpawnThemAll(Integer _Phase) {
 				Player.ArmorMax = 200;
 				Player.Armor = Player.ArmorMax;
 				SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, True); 
-				SM::SpawnPlayer(Player, Player.RequestedClan, BlockSpawn2, Now);
+				SM::SpawnPlayer(Player, Player.RequestedClan, MapLandmarks_PlayerSpawn[SpawnId2].PlayerSpawn, Now);
 			}
 			Player.IsHighlighted = True;
 			WarmUpSide = !WarmUpSide;
@@ -1318,6 +1318,7 @@ Void CheckSettings(Boolean restart){
 Void DoWarmUp() {
 	// Waiting that the UI receives initial data
 	//UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
+	
 	MB_Sleep(1000);
 	
 	if (MB_UseScriptCallbacks) XmlRpc.SendCallback("BeginWarmup", Json::Enfold(Json::Stringify("AllReady", False)));
@@ -1349,6 +1350,7 @@ Void DoWarmUp() {
 	UIManager.UIAll.StatusMessage = _("Press F6 once you're ready.");
 	
 	// Param: Duration, UseTeam, UseOrder, NumberOfPlayers
+	
 	if(G_FreeMode){
 		WarmUp::Before(S_WarmUpDuration, True, True, C_MaxPlayers/2);
 		
@@ -1589,7 +1591,7 @@ Void DisplayHitDistance(CSmPlayer _Shooter, CSmPlayer _Victim, Boolean _ShooterO
 	}
 }
 // Create markers layer manialink
-Text GetMarkersLayerManialink(CSmBlockPole Pole, Text Name) {
+Text GetMarkersLayerManialink(CSmMapLandmark Pole, Text Name) {
 	declare Type = """label="{{{Name}}}" """;
 	declare PosX = Pole.Position.X;
 	declare PosY = Pole.Position.Y + 25;
@@ -1605,24 +1607,24 @@ Text GetMarkersLayerManialink(CSmBlockPole Pole, Text Name) {
 Void InitialMarkers(Integer Clan){
 
 log("InitPoleMarker");
-	foreach(Pole in BlockPoles){
+	foreach(Pole in MapLandmarks_Gauge){
 		if(Pole.Gauge.Clan == 2 ){
 			if(Clan == 0 || Clan == 1){
 			foreach(PlayerId in G_Team1DefenderPlayers){
-				if(Players.existskey(PlayerId)) UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
+				if(Players.existskey(PlayerId)) UIManager.GetUI(Players[PlayerId]).MarkersXML = GetMarkersLayerManialink(Pole, "Defend");
 				}
 			}
 			if(Clan == 0 || Clan == 2){
-				if(Players.existskey(G_Team2AttackingPlayer)) UIManager.GetUI(Players[G_Team2AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
+				if(Players.existskey(G_Team2AttackingPlayer)) UIManager.GetUI(Players[G_Team2AttackingPlayer]).MarkersXML = GetMarkersLayerManialink(Pole, "Attack");
 			}
 		}else if(Pole.Gauge.Clan == 1){
 			if(Clan == 0 || Clan == 2){
 			foreach(PlayerId in G_Team2DefenderPlayers){
-				if(Players.existskey(PlayerId)) UIManager.GetUI(Players[PlayerId]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Defend");
+				if(Players.existskey(PlayerId)) UIManager.GetUI(Players[PlayerId]).MarkersXML = GetMarkersLayerManialink(Pole, "Defend");
 			}
 			}
 			if(Clan == 0 || Clan == 1){
-				if(Players.existskey(G_Team1AttackingPlayer)) UIManager.GetUI(Players[G_Team1AttackingPlayer]).Hud3dMarkers = GetMarkersLayerManialink(Pole, "Attack");
+				if(Players.existskey(G_Team1AttackingPlayer)) UIManager.GetUI(Players[G_Team1AttackingPlayer]).MarkersXML = GetMarkersLayerManialink(Pole, "Attack");
 			}
 		}
 	}
@@ -1661,7 +1663,7 @@ Void Team1WonAttack(){
 	G_LastStatusMessage=Now;
 	G_Team1WonAttack=True;
 	G_Team2WonDefense=False;
-	foreach (Pole in BlockPoles){
+	foreach (Pole in MapLandmarks_Gauge){
 		if(Pole.Gauge.Clan == 1){
 			Pole.Gauge.ValueReal = 1.0;
 		}
@@ -1686,7 +1688,7 @@ Void Team2WonAttack(){
 	G_Team2WonAttack=True;
 	G_Team1WonDefense=False;
 	
-	foreach (Pole in BlockPoles){
+	foreach (Pole in MapLandmarks_Gauge){
 		if(Pole.Gauge.Clan == 2){
 			Pole.Gauge.ValueReal = 1.0;
 		}
@@ -1781,7 +1783,7 @@ declare ManiaLink = "";
 Void InitGameSettings() {
 G_UseLaserVsBullets=S_UseLaserVsBullets;
 UseClans = True;
-UseForcedClans = True;
+UseForcedClans = False;
 //UIManager.UIAll.NoticesFilter_HideMapWarning = True;
 SM::SetupDefaultVisibility();
 if(!S_GetAPointForDefense){
@@ -1873,7 +1875,7 @@ log("reset pole and spawns");
 		clan2=1;
 	}
 	
-	foreach (Spawn in BlockSpawns) {
+	foreach (Spawn in MapLandmarks_PlayerSpawn) {
 		if(Spawn.Order==1){
 			Spawn.Base.Clan=clan1;
 			Spawn.Base.IsActive = True;
@@ -1885,7 +1887,7 @@ log("reset pole and spawns");
 		}
 	}
 	
-	foreach (Pole in BlockPoles){
+	foreach (Pole in MapLandmarks_Gauge){
 		if(Pole.Order==1){
 			Pole.Gauge.ValueReal = 0.0;
 			Pole.Base.Clan = clan1;
@@ -1900,7 +1902,7 @@ log("reset pole and spawns");
 }
 
 Void InitPoles() {
-foreach (Pole in BlockPoles){
+foreach (Pole in MapLandmarks_Gauge){
 	Pole.Gauge.Max = MathLib::NearestInteger(S_CaptureTime * 1000);
 }
 
@@ -2108,8 +2110,8 @@ Void StartPlay() {
 	foreach(Spectator in Spectators){
 		declare UI <=> UIManager.GetUI(Spectator);
 			if (UI != Null) {
-				UI.Hud3dMarkers ^= CreateAttackerMarker(1);
-				UI.Hud3dMarkers ^= CreateAttackerMarker(2);
+				UI.MarkersXML ^= CreateAttackerMarker(1);
+				UI.MarkersXML ^= CreateAttackerMarker(2);
 				declare netwrite Boolean Net_LayerST_Team1IsHidden for UI;
 				Net_LayerST_Team1IsHidden = True;
 				declare netwrite Boolean Net_LayerST_Team2IsHidden for UI;
@@ -2120,7 +2122,7 @@ Void StartPlay() {
 		if(G_Team2Players.exists(Player.Id)){
 			declare UI <=> UIManager.GetUI(Player);
 			if (UI != Null) {
-				UI.Hud3dMarkers ^= CreateAttackerMarker(1);
+				UI.MarkersXML ^= CreateAttackerMarker(1);
 				declare netwrite Boolean Net_LayerST_Team1IsHidden for UI;
 				Net_LayerST_Team1IsHidden = True;
 				declare netwrite Boolean Net_LayerST_Team2IsHidden for UI;
@@ -2130,7 +2132,7 @@ Void StartPlay() {
 		else if(G_Team1Players.exists(Player.Id)){
 			declare UI <=> UIManager.GetUI(Player);
 			if (UI != Null) {
-				UI.Hud3dMarkers ^= CreateAttackerMarker(2);
+				UI.MarkersXML ^= CreateAttackerMarker(2);
 				declare netwrite Boolean Net_LayerST_Team2IsHidden for UI;
 				Net_LayerST_Team2IsHidden = True;
 				declare netwrite Boolean Net_LayerST_Team1IsHidden for UI;
@@ -2490,7 +2492,7 @@ if (Now >= StartTime + S_AttackTimeLimit*1000 && Now<EndTime) {
 }
 }
 Void CheckForCapture(){
-foreach (Pole in BlockPoles) {
+foreach (Pole in MapLandmarks_Gauge) {
 	if (G_CapturingPossible) {
 		//if((!G_Team1WonAttack && Pole.Gauge.Clan == 1) || (!G_Team2WonAttack && Pole.Gauge.Clan == 2)){
 			if(Pole.Sector.PlayersIds.count > 0){
@@ -2683,7 +2685,7 @@ if (!MB_StopRound && Now>=EndTime) {
 	G_CapturingPossible = False;
 	SM::UnspawnAllPlayers();
 	// Round winner found
-	foreach(Pole in BlockPoles){
+	foreach(Pole in MapLandmarks_Gauge){
 		if(Pole.Gauge.ValueReal<1.0){
 			if(Pole.Gauge.Clan==2 && !G_Team2WonAttack && !G_Team1WonDefense){
 			log("Pole not cap, team1def win");
@@ -2729,7 +2731,7 @@ log("sleep");
 foreach(Player in Players){
 		if(Players.existskey(Player.Id)){
 			ResetPoleUIPlayer(Player);
-			UIManager.GetUI(Player).Hud3dMarkers = "";
+			UIManager.GetUI(Player).MarkersXML = "";
 		}
 	}
 sleep(MathLib::NearestInteger(S_TimeBetweenRounds*1000/2));
